@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "berkeley_humanoid_lite_lowlevel"
+version = "0.1.0"
+description = "Low-level control package for Berkeley Humanoid Lite secondary development"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "omegaconf",
+]
+
+[project.optional-dependencies]
+runtime = [
+    "cc.udp",
+    "inputs",
+    "loop_rate_limiters",
+    "onnxruntime",
+    "psutil",
+    "pyserial",
+    "torch==2.7.0",
+]
+teleoperation = [
+    "meshcat",
+    "meshcat_shapes",
+    "pin",
+    "pin-pink",
+    "qpsolvers[quadprog]",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
