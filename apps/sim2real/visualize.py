@@ -1,0 +1,13 @@
+# Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
+
+from berkeley_humanoid_lite.workflows import run_observation_visualizer
+from berkeley_humanoid_lite_lowlevel.policy import load_policy_deployment_configuration_from_cli
+
+
+def main() -> None:
+    configuration = load_policy_deployment_configuration_from_cli()
+    run_observation_visualizer(configuration)
+
+
+if __name__ == "__main__":
+    main()

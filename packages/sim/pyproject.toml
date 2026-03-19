@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "berkeley_humanoid_lite"
+version = "0.1.0"
+description = "Simulation and task package for Berkeley Humanoid Lite secondary development"
+requires-python = ">=3.11"
+dependencies = [
+    "berkeley_humanoid_lite_assets",
+    "berkeley_humanoid_lite_lowlevel[runtime]",
+    "cc.udp",
+    "gymnasium",
+    "mujoco",
+    "numpy",
+    "omegaconf",
+    "prettytable",
+    "torch==2.7.0",
+]
+
+[project.optional-dependencies]
+training = []
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
