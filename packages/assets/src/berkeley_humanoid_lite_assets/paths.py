@@ -6,6 +6,7 @@ from pathlib import Path
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _DEFAULT_VENDOR = "berkeley_humanoid"
 _DEFAULT_ROBOT = "berkeley_humanoid_lite"
+_DEFAULT_SCENE = "default"
 
 
 def get_package_root() -> Path:
@@ -96,3 +97,32 @@ def get_usd_path(
 ) -> Path:
     """返回 USD 文件路径。"""
     return get_robot_dir(robot_name=robot_name, vendor_name=vendor_name) / "usd" / file_name
+
+
+def get_scene_dir(scene_name: str = _DEFAULT_SCENE) -> Path:
+    """返回项目内场景资产目录。
+
+    该目录是可选资源目录，首次使用前可能不存在。
+    """
+    return get_data_dir() / "scenes" / scene_name
+
+
+def get_scene_materials_dir(scene_name: str = _DEFAULT_SCENE) -> Path:
+    """返回项目内场景材质目录。"""
+    return get_scene_dir(scene_name=scene_name) / "materials"
+
+
+def ensure_scene_materials_dir(scene_name: str = _DEFAULT_SCENE) -> Path:
+    """确保项目内场景材质目录存在。"""
+    materials_dir = get_scene_materials_dir(scene_name=scene_name)
+    materials_dir.mkdir(parents=True, exist_ok=True)
+    return materials_dir
+
+
+def get_scene_material_path(
+    file_name: str = "ground_surface.mdl",
+    *,
+    scene_name: str = _DEFAULT_SCENE,
+) -> Path:
+    """返回项目内场景材质文件路径。"""
+    return get_scene_materials_dir(scene_name=scene_name) / file_name

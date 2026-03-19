@@ -14,7 +14,6 @@
 │   ├── assets/
 │   ├── lowlevel/
 │   └── sim/
-└── tools/
 ```
 
 ## 安装
@@ -40,7 +39,7 @@ uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperatio
 - `isaacsim[all,extscache]==5.1.0`
 - `isaacsim-core==5.1.0.0`
 - `isaaclab[isaacsim,all]==2.3.2.post1`
-- `rsl-rl-lib==2.2.4`
+- `rsl-rl-lib==3.0.1`
 - `torch==2.7.0`
 - `torchvision==0.22.0`
 
@@ -112,7 +111,11 @@ uv run python apps/rsl_rl/play.py \
 uv run python apps/assets/export_onshape_to_urdf.py
 uv run python apps/assets/export_onshape_to_mjcf.py
 uv run python apps/assets/convert_urdf_to_usd.py
+uv run python apps/assets/prefetch_scene_material.py --preset isaac-shingles-01 --preset-version 5.1
+uv run python apps/assets/prefetch_scene_material.py --source /path/to/ground_surface.mdl
 ```
+
+Isaac 场景会优先使用 `packages/assets/src/berkeley_humanoid_lite_assets/data/scenes/default/materials/` 下可用的 `.mdl` 材质文件；`--preset isaac-shingles-01 --preset-version 5.1` 会下载 `Shingles_01.mdl` 及配套贴图，不存在时回退到本地 preview 材质。
 
 ### lowlevel
 

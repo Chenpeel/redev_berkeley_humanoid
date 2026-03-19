@@ -16,8 +16,8 @@ def _build_actuator_group(
 ) -> ImplicitActuatorCfg:
     return ImplicitActuatorCfg(
         joint_names_expr=list(actuator_group.joint_name_patterns),
-        effort_limit=actuator_group.effort_limit,
-        velocity_limit=actuator_group.velocity_limit,
+        effort_limit_sim=actuator_group.effort_limit,
+        velocity_limit_sim=actuator_group.velocity_limit,
         stiffness=actuator_group.stiffness,
         damping=actuator_group.damping,
         armature=actuator_group.armature,

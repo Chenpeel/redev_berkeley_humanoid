@@ -6,15 +6,16 @@ from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg
 from isaaclab.terrains import TerrainImporterCfg
-from isaaclab.utils.assets import NVIDIA_NUCLEUS_DIR, check_file_path
 from isaaclab.utils import configclass
+
+from berkeley_humanoid_lite_assets.scene_materials import resolve_scene_material_path
 
 
 def _ground_visual_material_cfg():
-    """优先使用 Nucleus 材质，不可用时退回到本地预览材质。"""
-    mdl_path = f"{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl"
-    if check_file_path(mdl_path):
-        return sim_utils.MdlFileCfg(mdl_path=mdl_path, project_uvw=True)
+    """优先使用项目内预下载场景材质，不存在时回退到本地预览材质。"""
+    material_path = resolve_scene_material_path()
+    if material_path is not None:
+        return sim_utils.MdlFileCfg(mdl_path=str(material_path), project_uvw=True)
     return sim_utils.PreviewSurfaceCfg(diffuse_color=(0.12, 0.12, 0.12))
 
 
@@ -80,7 +81,6 @@ class LocomotionVelocityEnvCfg(ManagerBasedRLEnvCfg):
         # simulation settings
         self.sim.dt = 0.005
         self.sim.render_interval = self.decimation
-        self.sim.disable_contact_processing = True
         self.sim.physics_material = self.scene.terrain.physics_material
         self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
         # update sensor update periods

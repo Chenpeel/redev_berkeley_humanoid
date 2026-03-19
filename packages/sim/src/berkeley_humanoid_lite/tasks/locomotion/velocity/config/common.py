@@ -350,6 +350,7 @@ def build_environment_cfg(
         def __post_init__(self):
             super().__post_init__()
             self.decimation = 8
+            self.sim.render_interval = self.decimation
             self.scene.robot = profile.robot_cfg.replace(prim_path="{ENV_REGEX_NS}/robot")
 
     VelocityTaskEnvCfg.__name__ = class_name
