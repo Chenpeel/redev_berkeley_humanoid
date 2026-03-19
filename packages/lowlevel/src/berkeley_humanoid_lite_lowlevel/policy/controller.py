@@ -7,6 +7,7 @@ import onnxruntime as ort
 import torch
 
 from berkeley_humanoid_lite_lowlevel.policy.configuration import PolicyDeploymentConfiguration
+from berkeley_humanoid_lite_lowlevel.robot.orientation_math import compute_projected_gravity, create_gravity_vector
 from berkeley_humanoid_lite_lowlevel.runtime_paths import resolve_workspace_path
 
 
@@ -54,22 +55,13 @@ class PolicyController:
         else:
             self.default_joint_positions = np.array(self.configuration.default_joint_positions[10:], dtype=np.float32)
 
-        self.gravity_vector = np.array([0.0, 0.0, -1.0], dtype=np.float32)
+        self.gravity_vector = create_gravity_vector()
         self.policy_observations = np.zeros(
             (1, self.configuration.num_observations * (self.configuration.history_length + 1)),
             dtype=np.float32,
         )
         self.policy_actions = np.zeros((1, self.configuration.num_actions), dtype=np.float32)
         self.previous_actions = np.zeros((self.configuration.num_actions,), dtype=np.float32)
-
-    @staticmethod
-    def quat_rotate_inverse(quaternion: np.ndarray, vector: np.ndarray) -> np.ndarray:
-        quaternion_w = quaternion[0]
-        quaternion_vector = quaternion[1:4]
-        a_term = vector * (2.0 * quaternion_w**2 - 1.0)
-        b_term = np.cross(quaternion_vector, vector) * quaternion_w * 2.0
-        c_term = quaternion_vector * (np.dot(quaternion_vector, vector)) * 2.0
-        return a_term - b_term + c_term
 
     def load_policy(self) -> None:
         checkpoint_path = resolve_workspace_path(self.configuration.policy_checkpoint_path)
@@ -100,7 +92,7 @@ class PolicyController:
             7 + self.configuration.num_actions * 2 + 1 : 7 + self.configuration.num_actions * 2 + 4
         ]
 
-        projected_gravity = self.quat_rotate_inverse(robot_base_quaternion, self.gravity_vector)
+        projected_gravity = compute_projected_gravity(robot_base_quaternion, self.gravity_vector)
         self.policy_observations[:] = np.concatenate(
             [
                 self.policy_observations[0, self.configuration.num_observations :],

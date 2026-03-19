@@ -1,46 +1,49 @@
 
 import time
-import threading
 
 import numpy as np
 import torch
-import mujoco
-import mujoco.viewer
-
-from berkeley_humanoid_lite_assets.paths import get_mjcf_path
-from berkeley_humanoid_lite_assets.robots import get_variant_for_joint_count
 from berkeley_humanoid_lite_lowlevel.policy.configuration import PolicyDeploymentConfiguration
 from berkeley_humanoid_lite_lowlevel.robot import GamepadCommandSource
 
-
-def quat_rotate_inverse(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    """Rotate a vector by the inverse of a quaternion.
-
-    Args:
-        q (torch.Tensor): Quaternion [w, x, y, z]
-        v (torch.Tensor): Vector to rotate
-
-    Returns:
-        torch.Tensor: Rotated vector
-    """
-    q_w = q[0]
-    q_vec = q[1:4]
-    a = v * (2.0 * q_w ** 2 - 1.0)
-    b = torch.cross(q_vec, v, dim=-1) * q_w * 2.0
-    c = q_vec * (torch.dot(q_vec, v)) * 2.0
-    return a - b + c
+from .control import compute_pd_torques
+from .initialization import build_simulator_initialization
+from .observations import (
+    build_policy_observation,
+    update_command_state,
+)
+from .runtime import (
+    apply_visualizer_observation,
+    pace_policy_step,
+    reset_simulator_state,
+    reset_visualizer_state,
+)
+from .session import close_mujoco_session, create_mujoco_session, step_mujoco_session, sync_mujoco_viewer
 
 
 class MujocoEnv:
     def __init__(self, cfg: PolicyDeploymentConfiguration):
         self.cfg = cfg
+        self.session = create_mujoco_session(
+            num_joints=int(cfg.num_joints),
+            physics_dt=float(self.cfg.physics_dt),
+        )
+        self.mj_model = self.session.model
+        self.mj_data = self.session.data
+        self.mj_viewer = self.session.viewer
+        self._closed = False
 
-        robot_variant = get_variant_for_joint_count(cfg.num_joints)
-        self.mj_model = mujoco.MjModel.from_xml_path(str(get_mjcf_path(robot_variant.mjcf_scene_file_name)))
+    def close(self) -> None:
+        if self._closed:
+            return
+        close_mujoco_session(self.session)
+        self._closed = True
 
-        self.mj_data = mujoco.MjData(self.mj_model)
-        self.mj_model.opt.timestep = self.cfg.physics_dt
-        self.mj_viewer = mujoco.viewer.launch_passive(self.mj_model, self.mj_data)
+    def __enter__(self) -> "MujocoEnv":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, exc_tb: object) -> None:
+        self.close()
 
 
 class MujocoVisualizer(MujocoEnv):
@@ -64,10 +67,7 @@ class MujocoVisualizer(MujocoEnv):
         Returns:
             torch.Tensor: Initial observations after reset
         """
-        self.mj_data.qpos[0:3] = np.array([0.0, 0.0, 0.0])  # Reset base position to origin
-        self.mj_data.qpos[3:7] = np.array([1.0, 0.0, 0.0, 0.0])  # Default quaternion orientation
-        self.mj_data.qpos[7:7 + self.num_dofs] = 0
-        self.mj_data.qvel[:] = 0
+        reset_visualizer_state(self.mj_data, num_dofs=self.num_dofs)
 
     def step(self, robot_observations: np.array) -> None:
         """Execute one simulation step with the given actions.
@@ -78,22 +78,14 @@ class MujocoVisualizer(MujocoEnv):
         Returns:
             torch.Tensor: Updated observations after executing the action
         """
-        robot_base_quat = robot_observations[0:4]
-        robot_base_ang_vel = robot_observations[4:7]
-        robot_joint_pos = robot_observations[7:7 + self.num_dofs]
-        robot_joint_vel = robot_observations[7 + self.num_dofs:7 + self.num_dofs * 2]
-        robot_mode = robot_observations[7 + self.num_dofs * 2]
-        command_velocity = robot_observations[7 + self.num_dofs * 2 + 1:7 + self.num_dofs * 2 + 4]
+        apply_visualizer_observation(
+            self.mj_data,
+            robot_observations,
+            num_dofs=self.num_dofs,
+        )
 
-        self.mj_data.qpos[0:3] = np.array([0.0, 0.0, 0.0])
-        self.mj_data.qpos[3:7] = robot_base_quat
-        self.mj_data.qvel[0:3] = np.array([0.0, 0.0, 0.0])
-        self.mj_data.qvel[3:6] = robot_base_ang_vel
-        self.mj_data.qpos[7:] = robot_joint_pos
-        self.mj_data.qvel[6:] = robot_joint_vel
-
-        mujoco.mj_step(self.mj_model, self.mj_data)
-        self.mj_viewer.sync()
+        step_mujoco_session(self.session)
+        sync_mujoco_viewer(self.session)
 
 
 class MujocoSimulator(MujocoEnv):
@@ -107,20 +99,14 @@ class MujocoSimulator(MujocoEnv):
     """
     def __init__(self, cfg: PolicyDeploymentConfiguration):
         super().__init__(cfg)
-        self.physics_substeps = int(np.round(self.cfg.policy_dt / self.cfg.physics_dt))
-
-        # Initialize simulation parameters
-        self.sensordata_dof_size = 3 * self.mj_model.nu
-        self.gravity_vector = torch.tensor([0.0, 0.0, -1.0])
-
-        # Initialize control parameters
-        self.joint_kp = torch.zeros((self.cfg.num_joints,), dtype=torch.float32)
-        self.joint_kd = torch.zeros((self.cfg.num_joints,), dtype=torch.float32)
-        self.effort_limits = torch.zeros((self.cfg.num_joints,), dtype=torch.float32)
-
-        self.joint_kp[:] = torch.tensor(self.cfg.joint_kp)
-        self.joint_kd[:] = torch.tensor(self.cfg.joint_kd)
-        self.effort_limits[:] = torch.tensor(self.cfg.effort_limits)
+        initialization = build_simulator_initialization(
+            self.cfg,
+            num_actuators=self.mj_model.nu,
+        )
+        self.physics_substeps = initialization.physics_substeps
+        self.sensor_layout = initialization.sensor_layout
+        self.control_parameters = initialization.control_parameters
+        self.command_state = initialization.command_state
 
         self.n_steps = 0
 
@@ -128,15 +114,16 @@ class MujocoSimulator(MujocoEnv):
         print("Physics frequency: ", 1 / self.cfg.physics_dt)
         print("Physics substeps: ", self.physics_substeps)
 
-        # Initialize control mode and command variables
-        self.is_killed = threading.Event()
-        self.mode = 3.0  # Default to RL control mode
-        self.command_velocity_x = 0.0
-        self.command_velocity_y = 0.0
-        self.command_velocity_yaw = 0.0
-
         self.command_source = GamepadCommandSource()
         self.command_source.start()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        command_source = getattr(self, "command_source", None)
+        if command_source is not None:
+            command_source.stop()
+        super().close()
 
     def reset(self) -> torch.Tensor:
         """Reset the simulation environment to initial state.
@@ -144,10 +131,11 @@ class MujocoSimulator(MujocoEnv):
         Returns:
             torch.Tensor: Initial observations after reset
         """
-        self.mj_data.qpos[0:3] = self.cfg.default_base_position
-        self.mj_data.qpos[3:7] = torch.tensor([1.0, 0.0, 0.0, 0.0])  # Default quaternion orientation
-        self.mj_data.qpos[7:] = self.cfg.default_joint_positions
-        self.mj_data.qvel[:] = 0
+        reset_simulator_state(
+            self.mj_data,
+            default_base_position=self.cfg.default_base_position,
+            default_joint_positions=self.cfg.default_joint_positions,
+        )
 
         observations = self._get_observations()
         return observations
@@ -165,15 +153,13 @@ class MujocoSimulator(MujocoEnv):
 
         for _ in range(self.physics_substeps):
             self._apply_actions(actions)
-            mujoco.mj_step(self.mj_model, self.mj_data)
+            step_mujoco_session(self.session)
 
-        self.mj_viewer.sync()
+        sync_mujoco_viewer(self.session)
         observations = self._get_observations()
 
         # Maintain real-time simulation
-        time_until_next_step = self.cfg.policy_dt - (time.perf_counter() - step_start_time)
-        if time_until_next_step > 0:
-            time.sleep(time_until_next_step)
+        pace_policy_step(self.cfg.policy_dt, step_start_time)
 
         self.n_steps += 1
         return observations
@@ -186,17 +172,17 @@ class MujocoSimulator(MujocoEnv):
         Args:
             actions (torch.Tensor): Target joint positions for controlled joints
         """
-        target_positions = torch.zeros((self.cfg.num_joints,))
-        target_positions[self.cfg.action_indices] = actions
-
-        # PD control
-        output_torques = self.joint_kp * (target_positions - self._get_joint_pos()) + \
-            self.joint_kd * (-self._get_joint_vel())
-
-        # Apply EMA filtering and torque limits
-        output_torques_clipped = torch.clip(output_torques, -self.effort_limits, self.effort_limits)
-
-        self.mj_data.ctrl[:] = output_torques_clipped.numpy()
+        output_torques = compute_pd_torques(
+            actions,
+            num_joints=self.cfg.num_joints,
+            action_indices=self.cfg.action_indices,
+            joint_positions=self._get_joint_pos(),
+            joint_velocities=self._get_joint_vel(),
+            joint_kp=self.control_parameters.joint_kp,
+            joint_kd=self.control_parameters.joint_kd,
+            effort_limits=self.control_parameters.effort_limits,
+        )
+        self.mj_data.ctrl[:] = output_torques.numpy()
 
     def _get_base_pos(self) -> torch.Tensor:
         """Get base position of the robot.
@@ -212,8 +198,7 @@ class MujocoSimulator(MujocoEnv):
         Returns:
             torch.Tensor: Base orientation quaternion [w, x, y, z]
         """
-        return torch.tensor(self.mj_data.sensordata[self.sensordata_dof_size+0:self.sensordata_dof_size+4],
-                          dtype=torch.float32)
+        return self.sensor_layout.base_quaternion(self.mj_data.sensordata)
 
     def _get_base_ang_vel(self) -> torch.Tensor:
         """Get base angular velocity from sensors.
@@ -221,18 +206,7 @@ class MujocoSimulator(MujocoEnv):
         Returns:
             torch.Tensor: Base angular velocity [wx, wy, wz]
         """
-        return torch.tensor(self.mj_data.sensordata[self.sensordata_dof_size+4:self.sensordata_dof_size+7],
-                          dtype=torch.float32)
-
-    def _get_projected_gravity(self) -> torch.Tensor:
-        """Get gravity vector in the robot's base frame.
-
-        Returns:
-            torch.Tensor: Projected gravity vector
-        """
-        base_quat = self._get_base_quat()
-        projected_gravity = quat_rotate_inverse(base_quat, self.gravity_vector)
-        return projected_gravity
+        return self.sensor_layout.base_angular_velocity(self.mj_data.sensordata)
 
     def _get_joint_pos(self) -> torch.Tensor:
         """Get joint positions from sensors.
@@ -240,7 +214,7 @@ class MujocoSimulator(MujocoEnv):
         Returns:
             torch.Tensor: Joint positions
         """
-        return torch.tensor(self.mj_data.sensordata[0:self.cfg.num_joints], dtype=torch.float32)
+        return self.sensor_layout.joint_positions(self.mj_data.sensordata)
 
     def _get_joint_vel(self) -> torch.Tensor:
         """Get joint velocities from sensors.
@@ -248,8 +222,7 @@ class MujocoSimulator(MujocoEnv):
         Returns:
             torch.Tensor: Joint velocities
         """
-        return torch.tensor(self.mj_data.sensordata[self.cfg.num_joints:2*self.cfg.num_joints],
-                          dtype=torch.float32)
+        return self.sensor_layout.joint_velocities(self.mj_data.sensordata)
 
     def _get_observations(self) -> torch.Tensor:
         """Get complete observation vector for the policy.
@@ -259,18 +232,13 @@ class MujocoSimulator(MujocoEnv):
                          angular velocity, joint positions, velocities, and command state
         """
         command = self.command_source.snapshot()
+        self.command_state = update_command_state(command, current_mode=self.command_state.mode)
 
-        if command.requested_state != 0:
-            self.mode = float(command.requested_state)
-        self.command_velocity_x = command.velocity_x
-        self.command_velocity_y = command.velocity_y * 0.5
-        self.command_velocity_yaw = command.velocity_yaw
-
-        return torch.cat([
-            self._get_base_quat(),
-            self._get_base_ang_vel(),
-            self._get_joint_pos()[self.cfg.action_indices],
-            self._get_joint_vel()[self.cfg.action_indices],
-            torch.tensor([self.mode, self.command_velocity_x, self.command_velocity_y, self.command_velocity_yaw],
-                        dtype=torch.float32),
-        ], dim=-1)
+        return build_policy_observation(
+            base_quat=self._get_base_quat(),
+            base_ang_vel=self._get_base_ang_vel(),
+            joint_positions=self._get_joint_pos(),
+            joint_velocities=self._get_joint_vel(),
+            action_indices=self.cfg.action_indices,
+            command_state=self.command_state,
+        )
