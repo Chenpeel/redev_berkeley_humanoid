@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "berkeley_humanoid_lite"
 version = "0.1.0"
 description = "Simulation and task package for Berkeley Humanoid Lite secondary development"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "berkeley_humanoid_lite_assets",
     "berkeley_humanoid_lite_lowlevel[runtime]",
@@ -20,7 +20,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-training = []
+training = [
+    "torchvision==0.22.0",
+    "isaacsim[all,extscache]==5.1.0",
+    "isaacsim-core==5.1.0.0",
+    "isaaclab[isaacsim,all]==2.3.2.post1",
+    "rsl-rl-lib==3.0.1",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

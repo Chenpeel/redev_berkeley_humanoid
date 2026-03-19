@@ -19,8 +19,10 @@
 
 ## 安装
 
+要求 Python `3.11`。
+
 ```bash
-# 基础开发环境
+# 默认开发环境（包含训练依赖）
 uv sync --all-packages --group dev
 
 # usd 导出
@@ -33,15 +35,14 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
-默认 `uv sync` 不会安装 Isaac Lab / Isaac Sim / RSL-RL 训练栈。需要自己训练时，使用一个已经可运行
-Isaac Lab + RSL-RL 的 Python 环境，再在该环境中执行本仓库命令。
+默认安装已经包含训练栈：
 
-训练运行时至少需要这些包：
-
-- `rsl_rl`
 - `isaacsim[all,extscache]==5.1.0`
 - `isaacsim-core==5.1.0.0`
 - `isaaclab[isaacsim,all]==2.3.2.post1`
+- `rsl-rl-lib==2.2.4`
+- `torch==2.7.0`
+- `torchvision==0.22.0`
 
 ## 训练
 

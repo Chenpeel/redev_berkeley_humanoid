@@ -1,5 +1,5 @@
 [tool.uv]
-default-groups = ["dev"]
+default-groups = ["dev", "training"]
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
@@ -12,6 +12,7 @@ members = [
 
 [tool.uv.sources]
 torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
 isaacsim = { index = "nvidia" }
 isaacsim-core = { index = "nvidia" }
 isaaclab = { index = "nvidia" }
@@ -23,6 +24,9 @@ berkeley_humanoid_lite_lowlevel = { workspace = true }
 dev = [
     "pytest>=8.3.0",
     "ruff>=0.11.0",
+]
+training = [
+    "berkeley_humanoid_lite[training]",
 ]
 assets-conversion = [
     "berkeley_humanoid_lite_assets[conversion]",
