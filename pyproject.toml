@@ -1,0 +1,61 @@
+[tool.uv]
+default-groups = ["dev"]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.workspace]
+members = [
+    "packages/assets",
+    "packages/lowlevel",
+    "packages/sim",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+isaacsim = { index = "nvidia" }
+isaacsim-core = { index = "nvidia" }
+isaaclab = { index = "nvidia" }
+berkeley_humanoid_lite = { workspace = true }
+berkeley_humanoid_lite_assets = { workspace = true }
+berkeley_humanoid_lite_lowlevel = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.11.0",
+]
+assets-conversion = [
+    "berkeley_humanoid_lite_assets[conversion]",
+]
+lowlevel-runtime = [
+    "berkeley_humanoid_lite_lowlevel[runtime]",
+]
+teleoperation = [
+    "berkeley_humanoid_lite_lowlevel[teleoperation]",
+]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["apps", "packages", "tools"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "packages/assets/src",
+    "packages/lowlevel/src",
+    "packages/sim/src",
+]
+testpaths = ["packages", "tools"]
