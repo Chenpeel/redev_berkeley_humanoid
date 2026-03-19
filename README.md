@@ -33,6 +33,72 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
+默认 `uv sync` 不会安装 Isaac Lab / Isaac Sim / RSL-RL 训练栈。需要自己训练时，使用一个已经可运行
+Isaac Lab + RSL-RL 的 Python 环境，再在该环境中执行本仓库命令。
+
+训练运行时至少需要这些包：
+
+- `rsl_rl`
+- `isaacsim[all,extscache]==5.1.0`
+- `isaacsim-core==5.1.0.0`
+- `isaaclab[isaacsim,all]==2.3.2.post1`
+
+## 训练
+
+可训练任务：
+
+- `Velocity-Berkeley-Humanoid-Lite-v0`
+- `Velocity-Berkeley-Humanoid-Lite-Biped-v0`
+
+从零训练：
+
+```bash
+# humanoid
+uv run python apps/rsl_rl/train.py \
+  --task Velocity-Berkeley-Humanoid-Lite-v0 \
+  --headless
+
+# biped
+uv run python apps/rsl_rl/train.py \
+  --task Velocity-Berkeley-Humanoid-Lite-Biped-v0 \
+  --headless
+```
+
+常用可选参数：
+
+- `--num_envs`
+- `--max_iterations`
+- `--seed`
+- `--run_name`
+- `--experiment_name`
+- `--video`
+
+训练产物位置：
+
+- 训练根目录：`artifacts/untested_ckpts/rsl_rl/`
+- humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/humanoid/`
+- biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/biped/`
+
+回放并导出部署模型：
+
+```bash
+uv run python apps/rsl_rl/play.py \
+  --task Velocity-Berkeley-Humanoid-Lite-v0 \
+  --experiment_name humanoid \
+  --load_run '.*' \
+  --checkpoint 'model_.*\.pt' \
+  --headless
+```
+
+`play.py` 会做两件事：
+
+- 从匹配到的最新 run 和最新 `model_*.pt` checkpoint 回放策略
+- 在该 run 目录下导出 `exported/policy.pt` 和 `exported/policy.onnx`
+
+同时会更新默认部署配置：
+
+- `configs/policies/policy_latest.yaml`
+
 ## 模块
 
 ### assets
@@ -101,8 +167,8 @@ uv run python apps/sim2real/visualize.py --config configs/policies/policy_biped_
 uv run python apps/list_envs.py
 
 # 训练与回放
-uv run python apps/rsl_rl/train.py --task BerkeleyHumanoidLite-Humanoid-v0
-uv run python apps/rsl_rl/play.py --task BerkeleyHumanoidLite-Humanoid-v0
+uv run python apps/rsl_rl/train.py --task Velocity-Berkeley-Humanoid-Lite-v0 --headless
+uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --experiment_name humanoid --load_run '.*' --checkpoint 'model_.*\.pt' --headless
 ```
 
 ## 配置与产物
@@ -110,7 +176,7 @@ uv run python apps/rsl_rl/play.py --task BerkeleyHumanoidLite-Humanoid-v0
 - 策略配置：`configs/policies/`
 - 硬件配置：`configs/hardware/`
 - 标定产物：`artifacts/calibration/`
-- 训练日志与 checkpoint：`artifacts/logs/rsl_rl/`
+- 训练日志与 checkpoint：`artifacts/untested_ckpts/rsl_rl/`
 - 默认部署配置：`configs/policies/policy_latest.yaml`
 
 ## 开发命令
@@ -122,4 +188,3 @@ make test
 make lock
 make tree
 ```
-

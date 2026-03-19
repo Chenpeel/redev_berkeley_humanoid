@@ -11,7 +11,7 @@ def get_workspace_root() -> Path:
 
 
 def get_rsl_rl_logs_dir() -> Path:
-    return _WORKSPACE_ROOT / "artifacts" / "logs" / "rsl_rl"
+    return _WORKSPACE_ROOT / "artifacts" / "untested_ckpts" / "rsl_rl"
 
 
 def get_policy_export_config_path() -> Path:
