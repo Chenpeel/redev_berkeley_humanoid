@@ -35,6 +35,13 @@ def add_rsl_rl_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def build_hydra_runtime_args(*, command_name: str) -> list[str]:
+    """返回训练脚本使用的 Hydra 运行目录参数。"""
+    return [
+        f"hydra.run.dir=artifacts/generated/hydra/{command_name}/${{now:%Y-%m-%d_%H-%M-%S}}",
+    ]
+
+
 def parse_rsl_rl_cfg(task_name: str, arguments: argparse.Namespace) -> RslRlOnPolicyRunnerCfg:
     """按任务名读取并覆写 RSL-RL 配置。"""
     from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry

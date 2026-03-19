@@ -3,6 +3,7 @@ from typing import Any
 
 __all__ = [
     "add_rsl_rl_args",
+    "build_hydra_runtime_args",
     "build_policy_deployment_configuration",
     "dump_pickle",
     "dump_training_configuration",
@@ -21,6 +22,7 @@ __all__ = [
 
 _MODULE_EXPORTS = {
     "add_rsl_rl_args": ("berkeley_humanoid_lite.training.arguments", "add_rsl_rl_args"),
+    "build_hydra_runtime_args": ("berkeley_humanoid_lite.training.arguments", "build_hydra_runtime_args"),
     "parse_rsl_rl_cfg": ("berkeley_humanoid_lite.training.arguments", "parse_rsl_rl_cfg"),
     "to_rsl_rl_runner_cfg": ("berkeley_humanoid_lite.training.arguments", "to_rsl_rl_runner_cfg"),
     "update_rsl_rl_cfg": ("berkeley_humanoid_lite.training.arguments", "update_rsl_rl_cfg"),

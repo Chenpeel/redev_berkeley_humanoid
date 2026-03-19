@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from isaaclab.app import AppLauncher
-from berkeley_humanoid_lite.training import add_rsl_rl_args, run_training
+from berkeley_humanoid_lite.training import add_rsl_rl_args, build_hydra_runtime_args, run_training
 
 
 # add argparse arguments
@@ -28,7 +28,7 @@ if args_cli.video:
     args_cli.enable_cameras = True
 
 # clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+sys.argv = [sys.argv[0], *hydra_args, *build_hydra_runtime_args(command_name="train")]
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)

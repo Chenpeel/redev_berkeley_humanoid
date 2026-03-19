@@ -7,6 +7,7 @@ __pycache__/
 AGENTS.md
 source/
 workspace/upstreams.local.toml
+outputs/
 
 artifacts/untested_ckpts/
 artifacts/generated/

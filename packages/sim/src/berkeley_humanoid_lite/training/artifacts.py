@@ -2,16 +2,30 @@ from __future__ import annotations
 
 from pathlib import Path
 import pickle
+from typing import Final
 
 
-def dump_pickle(path: str | Path, data: object) -> Path:
-    """将对象安全写入 pkl 文件。"""
+_PICKLE_FALLBACK_EXCEPTIONS: Final = (
+    AttributeError,
+    pickle.PickleError,
+    TypeError,
+)
+
+
+def dump_pickle(path: str | Path, data: object) -> Path | None:
+    """尽力写入 pkl 文件；对象不可序列化时返回 `None`。"""
     resolved_path = Path(path)
     if resolved_path.suffix != ".pkl":
         resolved_path = resolved_path.with_suffix(".pkl")
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
-    with resolved_path.open("wb") as file:
-        pickle.dump(data, file)
+    try:
+        with resolved_path.open("wb") as file:
+            pickle.dump(data, file)
+    except _PICKLE_FALLBACK_EXCEPTIONS as error:
+        print(f"[WARN] Skip pickle export for '{resolved_path.name}': {error}")
+        if resolved_path.exists():
+            resolved_path.unlink()
+        return None
     return resolved_path
 
 
