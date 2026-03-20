@@ -19,12 +19,79 @@ class FakePolicyController:
 
 
 class GamepadInputTests(unittest.TestCase):
+    def test_discover_linux_gamepads_reads_js_devices_when_inputs_enumeration_is_empty(self) -> None:
+        fake_devices = SimpleNamespace(gamepads=[], all_devices=[])
+        gamepad_factory = Mock(return_value="gamepad")
+        glob_results = {
+            "/sys/class/input/js*": ["/sys/class/input/js0"],
+            "/sys/class/input/js0/device/event*": ["/sys/class/input/js0/device/event15"],
+        }
+
+        with (
+            patch.object(command_source_module, "devices", fake_devices),
+            patch.object(command_source_module, "GamePad", gamepad_factory),
+            patch.object(command_source_module, "_is_linux", return_value=True),
+            patch.object(
+                command_source_module.glob,
+                "glob",
+                side_effect=lambda pattern: glob_results.get(pattern, []),
+            ),
+            patch.object(command_source_module.os.path, "exists", return_value=True),
+            patch.object(
+                command_source_module,
+                "_read_linux_gamepad_name",
+                return_value="Xbox Wireless Controller",
+            ),
+        ):
+            discovered_gamepads = command_source_module._discover_linux_gamepads()
+
+        self.assertEqual(discovered_gamepads, ["gamepad"])
+        gamepad_factory.assert_called_once_with(
+            fake_devices,
+            "/dev/input/by-id/manual-Xbox_Wireless_Controller-event-joystick",
+            char_path_override="/dev/input/event15",
+        )
+
+    def test_command_source_uses_linux_js_fallback_when_inputs_gamepads_are_empty(self) -> None:
+        command_source = GamepadCommandSource()
+        fake_gamepad = object()
+        fake_devices = SimpleNamespace(gamepads=[], all_devices=[])
+
+        with (
+            patch.object(command_source_module, "devices", fake_devices),
+            patch.object(command_source_module, "get_gamepad", Mock()),
+            patch.object(command_source_module, "_discover_linux_gamepads", return_value=[fake_gamepad]),
+        ):
+            command_source._ensure_available()
+
+        self.assertEqual(fake_devices.gamepads, [fake_gamepad])
+        self.assertEqual(fake_devices.all_devices, [fake_gamepad])
+
+    def test_command_source_advance_retries_after_registering_linux_fallback(self) -> None:
+        command_source = GamepadCommandSource()
+        fake_devices = SimpleNamespace(gamepads=[])
+        fake_event = SimpleNamespace(code="ABS_X", state=1234)
+
+        def register_fallback() -> None:
+            fake_devices.gamepads.append(object())
+
+        with (
+            patch.object(command_source_module, "devices", fake_devices),
+            patch.object(command_source_module, "_register_discovered_gamepads", side_effect=register_fallback) as register_discovered_gamepads,
+            patch.object(command_source_module, "get_gamepad", return_value=[fake_event]),
+        ):
+            command_source.advance()
+
+        register_discovered_gamepads.assert_called_once_with()
+        self.assertAlmostEqual(command_source.snapshot().velocity_yaw, -1234 / 32768.0)
+
     def test_command_source_start_fails_fast_when_no_gamepad_is_detected(self) -> None:
         command_source = GamepadCommandSource()
 
         with (
             patch.object(command_source_module, "devices", SimpleNamespace(gamepads=[])),
             patch.object(command_source_module, "get_gamepad", Mock()),
+            patch.object(command_source_module, "_discover_linux_gamepads", return_value=[]),
         ):
             with self.assertRaisesRegex(GamepadUnavailableError, "未检测到可用手柄"):
                 command_source.start()

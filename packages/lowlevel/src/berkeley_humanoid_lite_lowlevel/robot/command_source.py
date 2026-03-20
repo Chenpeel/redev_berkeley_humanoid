@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import glob
+import os
+import re
+import sys
 import threading
 from dataclasses import dataclass
 
 try:
-    from inputs import UnpluggedError, devices, get_gamepad
+    from inputs import GamePad, UnpluggedError, devices, get_gamepad
 except ImportError as import_error:  # pragma: no cover - 依赖缺失时在真实运行环境暴露
+    GamePad = None
     UnpluggedError = None
     devices = None
     get_gamepad = None
@@ -51,6 +56,108 @@ def _build_unavailable_error() -> GamepadUnavailableError:
     return GamepadUnavailableError(
         "未检测到可用手柄。请先连接手柄，并确认系统已经识别该设备后再重试。"
     )
+
+
+def _is_linux() -> bool:
+    return sys.platform.startswith("linux")
+
+
+def _sanitize_device_identifier(name: str) -> str:
+    identifier = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip()).strip("_")
+    return identifier or "gamepad"
+
+
+def _read_linux_gamepad_name(js_sysfs_path: str) -> str:
+    candidate_paths = (
+        os.path.join(js_sysfs_path, "device", "name"),
+        os.path.join(js_sysfs_path, "device", "device", "name"),
+    )
+    for candidate_path in candidate_paths:
+        try:
+            with open(candidate_path, encoding="utf-8") as device_name_file:
+                device_name = device_name_file.read().strip()
+        except OSError:
+            continue
+        if device_name:
+            return device_name
+    return os.path.basename(js_sysfs_path)
+
+
+def _find_linux_gamepad_event(js_sysfs_path: str) -> str | None:
+    candidate_patterns = (
+        os.path.join(js_sysfs_path, "device", "event*"),
+        os.path.join(js_sysfs_path, "device", "input*", "event*"),
+        os.path.join(js_sysfs_path, "device", "device", "event*"),
+        os.path.join(js_sysfs_path, "device", "device", "input*", "event*"),
+    )
+    for candidate_pattern in candidate_patterns:
+        event_paths = sorted(glob.glob(candidate_pattern))
+        if event_paths:
+            return event_paths[0]
+    return None
+
+
+def _build_fallback_device_path(device_name: str) -> str:
+    identifier = _sanitize_device_identifier(device_name)
+    return f"/dev/input/by-id/manual-{identifier}-event-joystick"
+
+
+def _discover_linux_gamepads() -> list[object]:
+    if not _is_linux() or devices is None or GamePad is None:
+        return []
+
+    known_char_names = {
+        gamepad.get_char_name()
+        for gamepad in getattr(devices, "gamepads", [])
+        if hasattr(gamepad, "get_char_name")
+    }
+    discovered_gamepads: list[object] = []
+
+    for js_sysfs_path in sorted(glob.glob("/sys/class/input/js*")):
+        event_sysfs_path = _find_linux_gamepad_event(js_sysfs_path)
+        if event_sysfs_path is None:
+            continue
+
+        event_name = os.path.basename(event_sysfs_path)
+        if event_name in known_char_names:
+            continue
+
+        character_device_path = os.path.join("/dev/input", event_name)
+        if not os.path.exists(character_device_path):
+            continue
+
+        device_name = _read_linux_gamepad_name(js_sysfs_path)
+        # inputs 在 Linux 上只扫描 by-id/by-path，这里为 js/event 设备构造一个可解析的伪路径。
+        fallback_device_path = _build_fallback_device_path(device_name)
+        try:
+            discovered_gamepads.append(
+                GamePad(
+                    devices,
+                    fallback_device_path,
+                    char_path_override=character_device_path,
+                )
+            )
+        except Exception:  # pragma: no cover - 依赖真实设备环境触发
+            continue
+        known_char_names.add(event_name)
+
+    return discovered_gamepads
+
+
+def _register_discovered_gamepads() -> None:
+    if devices is None:
+        return
+
+    discovered_gamepads = _discover_linux_gamepads()
+    if not discovered_gamepads:
+        return
+
+    devices.gamepads.extend(discovered_gamepads)
+    update_all_devices = getattr(devices, "_update_all_devices", None)
+    if callable(update_all_devices):
+        update_all_devices()
+    elif hasattr(devices, "all_devices"):
+        devices.all_devices.extend(discovered_gamepads)
 
 
 @dataclass(frozen=True)
@@ -166,6 +273,9 @@ class GamepadCommandSource:
         if get_gamepad is None:  # pragma: no cover - 依赖缺失只在真实运行时触发
             raise _build_dependency_error() from _GAMEPAD_IMPORT_ERROR
 
+        if devices is not None and not devices.gamepads:
+            _register_discovered_gamepads()
+
         try:
             events = get_gamepad()
         except Exception as error:  # pragma: no cover - 依赖真实设备触发
@@ -196,6 +306,9 @@ class GamepadCommandSource:
 
         if devices is None:  # pragma: no cover - 防御性分支
             raise _build_unavailable_error()
+
+        if not devices.gamepads:
+            _register_discovered_gamepads()
 
         if not devices.gamepads:
             raise _build_unavailable_error()
