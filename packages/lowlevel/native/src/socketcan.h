@@ -41,7 +41,7 @@
 #include <net/if.h>
 // Multi-threading
 #include <pthread.h>
-#include <boost/function.hpp>
+#include <string>
 
 
     class SocketCan
