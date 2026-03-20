@@ -21,8 +21,11 @@
 要求 Python `3.11`。
 
 ```bash
-# 默认开发环境（包含训练依赖）
+# 默认开发环境（不含 Isaac 训练依赖）
 uv sync --all-packages --group dev
+
+# Isaac 训练 / Isaac Sim 相关工具
+uv sync --all-packages --group dev --group training
 
 # usd 导出
 uv sync --all-packages --group dev --group assets-conversion
@@ -34,7 +37,7 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
-默认安装已经包含训练栈：
+Isaac 训练栈按需安装，包含：
 
 - `isaacsim[all,extscache]==5.1.0`
 - `isaacsim-core==5.1.0.0`
@@ -43,7 +46,20 @@ uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperatio
 - `torch==2.7.0`
 - `torchvision==0.22.0`
 
+需要以下入口时，先执行 `uv sync --all-packages --group dev --group training`：
+
+- `apps/rsl_rl/train.py`
+- `apps/rsl_rl/play.py`
+- `apps/list_envs.py`
+- `apps/assets/convert_urdf_to_usd.py`
+
 ## 训练
+
+运行前先安装 Isaac 训练依赖：
+
+```bash
+uv sync --all-packages --group dev --group training
+```
 
 可训练任务：
 
@@ -114,6 +130,8 @@ uv run python apps/assets/convert_urdf_to_usd.py
 uv run python apps/assets/prefetch_scene_material.py --preset isaac-shingles-01 --preset-version 5.1
 uv run python apps/assets/prefetch_scene_material.py --source /path/to/ground_surface.mdl
 ```
+
+其中 `apps/assets/convert_urdf_to_usd.py` 需要先安装 `training` 组。
 
 Isaac 场景会优先使用 `packages/assets/src/berkeley_humanoid_lite_assets/data/scenes/default/materials/` 下可用的 `.mdl` 材质文件；`--preset isaac-shingles-01 --preset-version 5.1` 会下载 `Shingles_01.mdl` 及配套贴图，不存在时回退到本地 preview 材质。
 
