@@ -37,6 +37,18 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
+## Make 快捷
+
+```bash
+make help
+```
+
+
+目录下 `make` 目标分为两类：
+
+- `verify` / `lint` / `test` 是 Python 工作区检查
+- `lowlevel-*` 是 `packages/lowlevel/native` 下的 C++/native 构建与运行快捷入口
+
 
 ## 模块指引
 
@@ -64,6 +76,13 @@ Isaac 场景会优先使用 `packages/assets/src/berkeley_humanoid_lite_assets/d
 - IMU / joystick / locomotion 运行时
 - 标定、策略部署、硬件配置管理
 
+> 说明
+>
+> 根目录的 `make lowlevel-*` 目标对应的是 C++/native 版本，
+> 即 `packages/lowlevel/native`。
+>
+> `apps/lowlevel/*.py` 下的脚本仍然是 Python 入口，两者不要混用。
+
 #####  CAN
 
 > 扫描CAN
@@ -81,6 +100,29 @@ uv run python apps/lowlevel/test_joystick.py
 ```
 
 ###### 手柄测试
+
+> 蓝牙连接手柄
+>
+> 可以先使用有线连接测试，通过后再进行测试蓝牙连接
+>
+> 以 类Xbox 为例，测试使用的是PXN，Linux 配对完成后可继续使用上面的 `test_joystick.py` 和 `udp_joystick.py`
+
+```bash
+sudo systemctl enable --now bluetooth
+bluetoothctl
+# 在 bluetoothctl 中依次执行
+power on
+agent on
+default-agent
+scan on
+# 手柄进入配对模式后，记录扫描到的 MAC 地址
+# MAC_Addr="98:B6:EA:18:D8:07" 这是我的手柄的MAC
+# 自行通过类似 Xbox Controller 等类似的字眼查找对应的MAC
+pair ${MAC_Addr}
+trust ${MAC_Addr}
+connect ${MAC_Addr}
+exit
+```
 
 > Python
 >
@@ -103,37 +145,8 @@ uv run python apps/lowlevel/udp_joystick.py
 > 仅验证 C++ 侧是否收到 joystick UDP 数据包
 
 ```bash
-cmake -S packages/lowlevel/native -B build/lowlevel/native
-cmake --build build/lowlevel/native --target test-udp -j
-./build/lowlevel/native/test-udp
-```
-
-> 蓝牙连接手柄
->
-> 以 类Xbox 为例，测试使用的是PXN，Linux 配对完成后可继续使用上面的 `test_joystick.py` 和 `udp_joystick.py`
-
-```bash
-sudo systemctl enable --now bluetooth
-bluetoothctl
-# 在 bluetoothctl 中依次执行
-power on
-agent on
-default-agent
-scan on
-# 手柄进入配对模式后，记录扫描到的 MAC 地址
-# MAC_Addr="98:B6:EA:18:D8:07" 这是我的手柄的MAC
-# 自行通过类似 Xbox Controller 等类似的字眼查找对应的MAC
-pair ${MAC_Addr}
-trust ${MAC_Addr}
-connect {MAC_Addr}
-exit
-```
-
-> 蓝牙连接验证
-
-```bash
-ls -l /dev/input/by-id | grep -i -E 'nintendo|joystick'
-uv run python -c "from inputs import devices; print(devices.gamepads)"
+make lowlevel-build-udp-test
+make lowlevel-run-udp-test
 ```
 
 ###### IMU 测试
@@ -160,26 +173,48 @@ uv run python apps/lowlevel/test_imu.py \
 > 仅编译 IMU 测试程序
 
 ```bash
-cmake -S packages/lowlevel/native -B build/lowlevel/native
-cmake --build build/lowlevel/native --target test-imu -j
+make lowlevel-build-imu-test
 ```
 
 > 默认自动检测协议 / 串口 / 波特率
 
 ```bash
-./build/lowlevel/native/test-imu
+make lowlevel-run-imu-test
 ```
 
 > 显式指定 HiWonder IM10A 串口参数
 
 ```bash
-./build/lowlevel/native/test-imu \
+make lowlevel-run-imu-test IMU_TEST_ARGS="\
   --protocol hiwonder \
   --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
-  --baudrate 9600
+  --baudrate 9600"
 ```
 
 ##### 标定与运行
+
+> C++ / native 主程序
+>
+> 运行前先确保 `can0` / `can1` 已经拉起。
+> 如果只想查看快捷命令，先执行 `make help`。
+
+```bash
+make lowlevel-build
+make lowlevel-run
+```
+
+> 显式指定 native 主程序的 IMU 参数
+
+```bash
+make lowlevel-run LOWLEVEL_ARGS="\
+  --protocol hiwonder \
+  --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+  --baudrate 9600"
+```
+
+> Python 标定与运行脚本
+>
+> 下面这些命令是 Python 入口，不是 `make lowlevel-*` 的封装。
 
 ```bash
 uv run python apps/lowlevel/calibrate_joints.py
