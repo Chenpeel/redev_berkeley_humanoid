@@ -80,6 +80,34 @@ uv run python apps/lowlevel/motor/ping.py --id 1
 uv run python apps/lowlevel/test_joystick.py
 ```
 
+###### 手柄测试
+
+> Python
+>
+> 本机读取手柄并打印解析后的 locomotion 命令
+
+```bash
+uv run python apps/lowlevel/test_joystick.py
+```
+
+> Python -> native runtime
+>
+> 将手柄命令按 C++ runtime 约定的 `10011` UDP 协议广播到本机
+
+```bash
+uv run python apps/lowlevel/udp_joystick.py
+```
+
+> native UDP 收包调试
+>
+> 仅验证 C++ 侧是否收到 joystick UDP 数据包
+
+```bash
+cmake -S packages/lowlevel/native -B build/lowlevel/native
+cmake --build build/lowlevel/native --target test-udp -j
+./build/lowlevel/native/test-udp
+```
+
 ###### IMU 测试
 
 > Python 

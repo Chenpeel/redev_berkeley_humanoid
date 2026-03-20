@@ -19,6 +19,7 @@ __all__ = [
     "run_locomotion_loop",
     "run_policy_inference_smoke_test",
     "stream_gamepad_commands",
+    "broadcast_gamepad_commands",
     "check_teleoperation_connection",
     "run_teleoperation_idle_loop",
     "run_teleoperation_loop",
@@ -83,6 +84,10 @@ _MODULE_EXPORTS = {
     "stream_gamepad_commands": (
         "berkeley_humanoid_lite_lowlevel.workflows.locomotion",
         "stream_gamepad_commands",
+    ),
+    "broadcast_gamepad_commands": (
+        "berkeley_humanoid_lite_lowlevel.workflows.locomotion",
+        "broadcast_gamepad_commands",
     ),
     "check_teleoperation_connection": (
         "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",
