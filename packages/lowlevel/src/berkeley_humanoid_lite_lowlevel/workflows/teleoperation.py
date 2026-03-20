@@ -9,10 +9,6 @@ from cc.udp import UDP
 from loop_rate_limiters import RateLimiter
 import numpy as np
 
-from berkeley_humanoid_lite_lowlevel.robot import Bimanual, SerialGripper
-from berkeley_humanoid_lite_lowlevel.teleoperation import TeleoperationIkSolver
-
-
 TELEOP_BRIDGE_PORT = 11005
 
 
@@ -21,6 +17,9 @@ def _create_bridge_udp() -> UDP:
 
 
 def run_teleoperation_loop() -> None:
+    from berkeley_humanoid_lite_lowlevel.robot import Bimanual
+    from berkeley_humanoid_lite_lowlevel.teleoperation import TeleoperationIkSolver
+
     np.set_printoptions(precision=2)
 
     solver = TeleoperationIkSolver()
@@ -61,6 +60,8 @@ def run_teleoperation_loop() -> None:
 
 
 def run_teleoperation_idle_loop() -> None:
+    from berkeley_humanoid_lite_lowlevel.robot import Bimanual
+
     np.set_printoptions(precision=3, suppress=True)
 
     rate = RateLimiter(100)
@@ -79,6 +80,8 @@ def run_teleoperation_idle_loop() -> None:
 
 
 def check_teleoperation_connection() -> None:
+    from berkeley_humanoid_lite_lowlevel.robot import Bimanual
+
     robot = Bimanual()
     try:
         robot.check_connection()
@@ -113,6 +116,8 @@ def build_demo_bridge_data(timestamp: float) -> dict[str, dict[str, object]]:
 
 
 def run_teleoperation_solver_demo() -> None:
+    from berkeley_humanoid_lite_lowlevel.teleoperation import TeleoperationIkSolver
+
     solver = TeleoperationIkSolver()
     rate = RateLimiter(frequency=100.0, warn=False)
 
@@ -136,6 +141,8 @@ def stream_gripper_targets(
     right_target: float = 0.8,
     period_seconds: float = 0.1,
 ) -> None:
+    from berkeley_humanoid_lite_lowlevel.robot import SerialGripper
+
     gripper = SerialGripper(port=port, baudrate=baudrate)
     try:
         while True:
