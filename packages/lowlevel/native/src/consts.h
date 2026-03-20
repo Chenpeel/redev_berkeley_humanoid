@@ -14,7 +14,8 @@
 #define N_JOINTS            12
 
 
-#define POLICY_CONFIG_PATH          "configs/policy_biped.yaml"
+#define POLICY_CONFIG_PATH          "configs/policies/policy_biped_50hz.yaml"
+#define CALIBRATION_PATH            "artifacts/calibration/calibration.yaml"
 
 
 #define DEBUG_DISABLE_TRANSPORTS     0
@@ -30,4 +31,3 @@
 
 
 #define N_DOF     12   //24
-

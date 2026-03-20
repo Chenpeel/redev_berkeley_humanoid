@@ -1,9 +1,64 @@
 // Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
+#include <filesystem>
+#include <stdexcept>
 #include <sys/ioctl.h>
 
 #include "real_humanoid.h"
 #include "motor_controller_conf.h"
+
+
+namespace {
+
+namespace fs = std::filesystem;
+
+
+bool is_workspace_root(const fs::path &candidate) {
+  return fs::exists(candidate / "pyproject.toml") && fs::exists(candidate / "packages");
+}
+
+
+fs::path find_workspace_root(const fs::path &start_path) {
+  fs::path current = fs::absolute(start_path);
+  if (!fs::is_directory(current)) {
+    current = current.parent_path();
+  }
+
+  while (!current.empty()) {
+    if (is_workspace_root(current)) {
+      return current;
+    }
+
+    const fs::path parent = current.parent_path();
+    if (parent == current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return {};
+}
+
+
+fs::path resolve_workspace_path(const fs::path &relative_path) {
+  if (relative_path.is_absolute()) {
+    return relative_path;
+  }
+
+  const fs::path current_working_directory_path = fs::absolute(relative_path);
+  if (fs::exists(current_working_directory_path)) {
+    return current_working_directory_path;
+  }
+
+  const fs::path workspace_root = find_workspace_root(__FILE__);
+  if (!workspace_root.empty()) {
+    return workspace_root / relative_path;
+  }
+
+  return current_working_directory_path;
+}
+
+}  // namespace
 
 
 static float linear_interpolate(float start, float end, float percentage) {
@@ -32,11 +87,16 @@ RealHumanoid::RealHumanoid(const IMUConfiguration &imu_configuration) : imu_conf
     lowlevel_states[i] = 0;
   }
 
-
-  const std::string config_path = "calibration.yaml";
-  YAML::Node config = YAML::LoadFile(config_path);
-  for (size_t i=0; i<N_JOINTS; i+=1) {
-    position_offsets[i] = config["position_offsets"][i].as<float>();
+  const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);
+  if (fs::exists(calibration_path)) {
+    YAML::Node calibration_config = YAML::LoadFile(calibration_path.string());
+    for (size_t i=0; i<N_JOINTS; i+=1) {
+      position_offsets[i] = calibration_config["position_offsets"][i].as<float>();
+    }
+  } else {
+    printf(
+        "[INFO] <Main>: Calibration file %s not found, using zero offsets\n",
+        calibration_path.string().c_str());
   }
 
   printf("loaded joint offsets: ");
@@ -45,8 +105,12 @@ RealHumanoid::RealHumanoid(const IMUConfiguration &imu_configuration) : imu_conf
   }
   printf("\n");
 
-  const std::string policy_config_path = POLICY_CONFIG_PATH;
-  YAML::Node policy_config = YAML::LoadFile(policy_config_path);
+  const fs::path policy_config_path = resolve_workspace_path(POLICY_CONFIG_PATH);
+  if (!fs::exists(policy_config_path)) {
+    throw std::runtime_error("Unable to find policy config: " + policy_config_path.string());
+  }
+
+  YAML::Node policy_config = YAML::LoadFile(policy_config_path.string());
   for (size_t i=0; i<N_JOINTS; i+=1) {
     joint_kp[i] = policy_config["joint_kp"][i].as<float>();
     joint_kd[i] = policy_config["joint_kd"][i].as<float>();
