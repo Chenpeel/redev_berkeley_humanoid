@@ -14,7 +14,7 @@ static float linear_interpolate(float start, float end, float percentage) {
 }
 
 
-RealHumanoid::RealHumanoid() {
+RealHumanoid::RealHumanoid(const IMUConfiguration &imu_configuration) : imu_configuration_(imu_configuration) {
   imu = nullptr;
   state = STATE_IDLE;
   next_state = STATE_IDLE;
@@ -445,7 +445,7 @@ void RealHumanoid::initialize() {
     }
   #endif
 
-  imu = new IMU(IMU_PATH, IMU_BAUDRATE);
+  imu = new IMU(imu_configuration_);
 
   status = imu->init();
   if (status < 0) {

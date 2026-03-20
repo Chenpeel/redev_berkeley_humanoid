@@ -29,9 +29,5 @@
 #define NANOSECOND_PER_SECOND       1000000000
 
 
-#define IMU_PATH      "/dev/serial/by-path/pci-0000:00:14.0-usb-0:4:1.0"
-#define IMU_BAUDRATE  B1000000
-
 #define N_DOF     12   //24
-
 

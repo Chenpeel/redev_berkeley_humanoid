@@ -1,48 +1,67 @@
 // Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
+#include <pthread.h>
+#include <exception>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <pthread.h>
+#include <string>
 
 #include "imu.h"
 
 
-#define IMU_PATH      "/dev/serial/by-path/pci-0000:00:14.0-usb-0:4:1.0"
-#define IMU_BAUDRATE  B1000000
-
-
-int main() {
-  IMU imu = IMU(IMU_PATH, IMU_BAUDRATE);
-  ssize_t ret = imu.init();
-  if (ret < 0) {
-    printf("Error initializing IMU: %s\n", strerror(errno));
-    return -1;
+int main(int argc, char **argv) {
+  IMUCliOptions imu_options;
+  bool show_help = false;
+  std::string error_message;
+  if (!parse_imu_cli_options(argc, argv, &imu_options, &show_help, &error_message)) {
+    fprintf(stderr, "%s\n", error_message.c_str());
+    print_imu_usage(argv[0]);
+    return 1;
+  }
+  if (show_help) {
+    print_imu_usage(argv[0]);
+    return 0;
   }
 
-  const sched_param sched{.sched_priority = 49};
-  pthread_setschedparam(pthread_self(), SCHED_FIFO, &sched);
-  
+  try {
+    const IMUConfiguration configuration = resolve_imu_configuration(imu_options);
+    IMU imu(configuration);
+    ssize_t ret = imu.init();
+    if (ret < 0) {
+      printf("Error initializing IMU: %s\n", strerror(errno));
+      return 1;
+    }
 
-  
-  while (1) {
-    struct timespec start_time, current_time;
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    const sched_param sched{.sched_priority = 49};
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sched);
 
-    // imu.trigger_update();
-    imu.update_reading();
+    printf(
+        "Streaming native IMU from %s with protocol %s at %d baud\n",
+        imu.device().c_str(),
+        imu_protocol_name(imu.protocol()),
+        imu.baudrate_value());
 
-    clock_gettime(CLOCK_MONOTONIC, &current_time);
-    double elapsed_time = (current_time.tv_sec - start_time.tv_sec) + (current_time.tv_nsec - start_time.tv_nsec) / 1e9;
-    // printf("Elapsed time: %.2f ms, Hz: %.2f\n", elapsed_time * 1e3, 1.0 / elapsed_time);
+    while (1) {
+      imu.update_reading();
 
-    printf("qpos: %f %f %f %f\n", imu.quaternion[0], imu.quaternion[1], imu.quaternion[2], imu.quaternion[3]);
+      printf(
+          "qpos: %.3f %.3f %.3f %.3f | gyro(rad/s): %.3f %.3f %.3f | angle(deg): %.2f %.2f %.2f\n",
+          imu.quaternion[0],
+          imu.quaternion[1],
+          imu.quaternion[2],
+          imu.quaternion[3],
+          imu.angular_velocity[0],
+          imu.angular_velocity[1],
+          imu.angular_velocity[2],
+          imu.angle[0],
+          imu.angle[1],
+          imu.angle[2]);
+    }
+  } catch (const std::exception &error) {
+    fprintf(stderr, "%s\n", error.what());
+    return 1;
   }
-  
-  
-
-  printf("Hello, World!\n");
 }
-

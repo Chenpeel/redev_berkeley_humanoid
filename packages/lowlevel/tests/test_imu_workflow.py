@@ -40,11 +40,15 @@ class ImuWorkflowTests(unittest.TestCase):
             )
 
         self.assertEqual(
-            configurations[:4],
+            configurations[:8],
             [
                 ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800),
                 ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 115200),
                 ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 230400),
+                ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 9600),
+                ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 19200),
+                ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 38400),
+                ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 57600),
                 ImuStreamConfiguration("packet", "/dev/ttyUSB0", 1_000_000),
             ],
         )

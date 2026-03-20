@@ -125,7 +125,7 @@ class RealHumanoid {
        1, 1
     };
 
-    RealHumanoid();
+    explicit RealHumanoid(const IMUConfiguration &imu_configuration);
     ~RealHumanoid();
 
     /**
@@ -162,6 +162,7 @@ class RealHumanoid {
     std::string config_udp_host_addr_;
 
     /* devices */
+    IMUConfiguration imu_configuration_;
     IMU *imu;
     SocketCan left_arm_bus;
     SocketCan right_arm_bus;
