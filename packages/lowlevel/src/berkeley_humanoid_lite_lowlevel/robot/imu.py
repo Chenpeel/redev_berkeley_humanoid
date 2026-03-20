@@ -237,19 +237,19 @@ class SerialImu:
 
         # self.__debug_last_time: float = time.perf_counter_ns()
 
-    def __read_frame(self) -> None:
+    def __read_frame(self) -> bool:
         """
         Parse a frame from the serial port.
         """
         start = self.ser.read(1)
         if len(start) != 1:
-            return
+            return False
         start, = struct.unpack("<B", start)
         if start != 0x55:
-            return
+            return False
         frame = self.ser.read(self.FRAME_LENGTH - 1)
         if len(frame) != self.FRAME_LENGTH - 1:
-            return
+            return False
 
         frame_type, data1, data2, data3, data4, sumcrc = struct.unpack("<BhhhhB", frame)
 
@@ -288,9 +288,11 @@ class SerialImu:
             self.quaternion[2] = data3 * 1.0 / 32768.0
             self.quaternion[3] = data4 * 1.0 / 32768.0
 
-    def read_frame(self) -> None:
+        return True
+
+    def read_frame(self) -> bool:
         """读取一帧 IMU 数据。"""
-        self.__read_frame()
+        return self.__read_frame()
 
     def run(self) -> None:
         """

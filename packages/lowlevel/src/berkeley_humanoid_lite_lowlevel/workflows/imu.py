@@ -114,18 +114,6 @@ def _build_probe_configurations(
     return configurations
 
 
-def _has_hiwonder_measurement(imu: SerialImu) -> bool:
-    return any(
-        abs(float(value)) > 1e-3
-        for value in (
-            *imu.acceleration.tolist(),
-            *imu.angular_velocity.tolist(),
-            *imu.angle.tolist(),
-            *imu.quaternion.tolist(),
-        )
-    )
-
-
 def _probe_hiwonder(device: str, *, baudrate: int, timeout: float, probe_duration: float) -> bool:
     imu = SerialImu(
         port=device,
@@ -135,8 +123,7 @@ def _probe_hiwonder(device: str, *, baudrate: int, timeout: float, probe_duratio
     started_at = time.perf_counter()
     try:
         while time.perf_counter() - started_at < probe_duration:
-            imu.read_frame()
-            if _has_hiwonder_measurement(imu):
+            if imu.read_frame():
                 return True
     finally:
         imu.close()

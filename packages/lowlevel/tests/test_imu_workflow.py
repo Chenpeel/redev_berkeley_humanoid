@@ -6,6 +6,7 @@ from unittest import mock
 from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     ImuStreamConfiguration,
     _build_probe_configurations,
+    _probe_hiwonder,
     detect_imu_stream,
     normalize_hiwonder_baudrate,
     parse_baudrate_argument,
@@ -61,6 +62,28 @@ class ImuWorkflowTests(unittest.TestCase):
             configuration = detect_imu_stream()
 
         self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 115200))
+
+    def test_probe_hiwonder_accepts_valid_zero_frame(self) -> None:
+        imu = mock.Mock()
+        imu.read_frame.side_effect = [True]
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.SerialImu",
+            return_value=imu,
+        ), mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.time.perf_counter",
+            side_effect=[0.0, 0.0],
+        ):
+            self.assertTrue(
+                _probe_hiwonder(
+                    "/dev/ttyUSB0",
+                    baudrate=460800,
+                    timeout=0.01,
+                    probe_duration=0.5,
+                )
+            )
+
+        imu.close.assert_called_once()
 
 
 if __name__ == "__main__":
