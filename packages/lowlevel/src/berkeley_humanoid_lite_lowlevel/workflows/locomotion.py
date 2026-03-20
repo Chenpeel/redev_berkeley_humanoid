@@ -113,13 +113,57 @@ def check_locomotion_connection() -> None:
         robot.shutdown()
 
 
-def run_policy_inference_smoke_test(configuration: PolicyDeploymentConfiguration) -> None:
+def create_policy_inference_smoke_test_observations(
+    configuration: PolicyDeploymentConfiguration,
+    *,
+    command_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> np.ndarray:
+    observations = np.zeros((7 + configuration.num_actions * 2 + 1 + 3,), dtype=np.float32)
+    observations[0] = 1.0
+
+    if configuration.num_actions == configuration.num_joints:
+        default_joint_positions = np.array(configuration.default_joint_positions, dtype=np.float32)
+    else:
+        default_joint_positions = np.array(configuration.default_joint_positions[10:], dtype=np.float32)
+
+    observations[7 : 7 + configuration.num_actions] = default_joint_positions
+    observations[7 + configuration.num_actions * 2 + 1 : 7 + configuration.num_actions * 2 + 4] = np.asarray(
+        command_velocity,
+        dtype=np.float32,
+    )
+    return observations
+
+
+def run_policy_inference_smoke_test(
+    configuration: PolicyDeploymentConfiguration,
+    *,
+    command_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> np.ndarray:
     from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
     controller = PolicyController(configuration)
     controller.load_policy()
-    observations = np.zeros((7 + configuration.num_actions * 2 + 1 + 3,), dtype=np.float32)
-    controller.compute_actions(observations)
+    observations = create_policy_inference_smoke_test_observations(
+        configuration,
+        command_velocity=command_velocity,
+    )
+    actions = controller.compute_actions(observations)
+
+    print(f"Observation shape: {tuple(observations.shape)}")
+    print(
+        "Command velocity:",
+        f"vx={command_velocity[0]:.3f}",
+        f"vy={command_velocity[1]:.3f}",
+        f"vyaw={command_velocity[2]:.3f}",
+    )
+    print("Actions:", np.array2string(actions, precision=4, suppress_small=True))
+    print(
+        "Action stats:",
+        f"min={float(actions.min()):.4f}",
+        f"max={float(actions.max()):.4f}",
+        f"mean={float(actions.mean()):.4f}",
+    )
+    return actions
 
 
 def stream_gamepad_commands() -> None:

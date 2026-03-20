@@ -13,10 +13,16 @@ def main() -> None:
         default=str(get_policy_config_path("policy_humanoid.yaml")),
         help="Path to the deployment configuration file",
     )
+    parser.add_argument("--vx", type=float, default=0.0, help="Synthetic forward command velocity for the smoke test")
+    parser.add_argument("--vy", type=float, default=0.0, help="Synthetic lateral command velocity for the smoke test")
+    parser.add_argument("--vyaw", type=float, default=0.0, help="Synthetic yaw command velocity for the smoke test")
     arguments = parser.parse_args()
 
     configuration = load_policy_deployment_configuration(arguments.config)
-    run_policy_inference_smoke_test(configuration)
+    run_policy_inference_smoke_test(
+        configuration,
+        command_velocity=(arguments.vx, arguments.vy, arguments.vyaw),
+    )
 
 
 if __name__ == "__main__":
