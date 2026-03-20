@@ -45,8 +45,12 @@ class LocomotionRobot:
             self.imu.run_forever()
 
         self.command_source = GamepadCommandSource() if enable_command_source else None
-        if self.command_source is not None:
-            self.command_source.start()
+        try:
+            if self.command_source is not None:
+                self.command_source.start()
+        except Exception:
+            self.shutdown()
+            raise
 
         self.state = LocomotionControlState.IDLE
         self.requested_state = LocomotionControlState.INVALID
@@ -108,7 +112,9 @@ class LocomotionRobot:
         imu_quaternion = self.lowlevel_states[0:4]
         imu_angular_velocity = self.lowlevel_states[4:7]
         joint_positions = self.lowlevel_states[7:7 + self.specification.joint_count]
-        joint_velocities = self.lowlevel_states[7 + self.specification.joint_count:7 + self.specification.joint_count * 2]
+        joint_velocities = self.lowlevel_states[
+            7 + self.specification.joint_count:7 + self.specification.joint_count * 2
+        ]
         mode = self.lowlevel_states[7 + self.specification.joint_count * 2:7 + self.specification.joint_count * 2 + 1]
         velocity_commands = self.lowlevel_states[7 + self.specification.joint_count * 2 + 1:]
 

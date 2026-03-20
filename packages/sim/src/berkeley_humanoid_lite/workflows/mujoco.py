@@ -10,8 +10,9 @@ def run_mujoco_policy_loop(configuration: object) -> None:
 
     from ..environments import MujocoSimulator
 
-    simulator = MujocoSimulator(configuration)
+    simulator = None
     try:
+        simulator = MujocoSimulator(configuration)
         observations = simulator.reset()
 
         policy_controller = PolicyController(configuration)
@@ -28,7 +29,8 @@ def run_mujoco_policy_loop(configuration: object) -> None:
                 actions = default_actions
             observations = simulator.step(torch.as_tensor(actions, dtype=torch.float32))
     finally:
-        simulator.close()
+        if simulator is not None:
+            simulator.close()
 
 
 def run_mujoco_visualization(configuration: object) -> None:

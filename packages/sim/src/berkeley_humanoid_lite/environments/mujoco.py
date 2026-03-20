@@ -115,7 +115,11 @@ class MujocoSimulator(MujocoEnv):
         print("Physics substeps: ", self.physics_substeps)
 
         self.command_source = GamepadCommandSource()
-        self.command_source.start()
+        try:
+            self.command_source.start()
+        except Exception:
+            super().close()
+            raise
 
     def close(self) -> None:
         if self._closed:

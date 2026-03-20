@@ -6,9 +6,9 @@ import struct
 import time
 from typing import TYPE_CHECKING
 
+import numpy as np
 from cc.udp import UDP
 from loop_rate_limiters import RateLimiter
-import numpy as np
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource, LocomotionCommand
 
@@ -52,16 +52,18 @@ def run_locomotion_loop(configuration: PolicyDeploymentConfiguration) -> None:
 
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
 
-    observation_stream = create_observation_stream(configuration)
     controller = PolicyController(configuration)
     controller.load_policy()
     rate = RateLimiter(1 / configuration.policy_dt)
 
-    robot = LocomotionRobot()
-    robot.enter_damping_mode()
-    observations = robot.reset()
-
+    robot = None
+    observation_stream = None
     try:
+        robot = LocomotionRobot()
+        observation_stream = create_observation_stream(configuration)
+        robot.enter_damping_mode()
+        observations = robot.reset()
+
         while True:
             actions = controller.compute_actions(observations)
             observations = robot.step(actions)
@@ -70,18 +72,23 @@ def run_locomotion_loop(configuration: PolicyDeploymentConfiguration) -> None:
     except KeyboardInterrupt:
         print("Stopping locomotion loop.")
     finally:
-        robot.stop()
+        if observation_stream is not None:
+            observation_stream.stop()
+        if robot is not None:
+            robot.stop()
 
 
 def run_idle_stream(configuration: PolicyDeploymentConfiguration) -> None:
     from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
 
-    robot = LocomotionRobot()
-    observation_stream = create_observation_stream(configuration)
-    robot.enter_damping_mode()
-    robot.reset()
-
+    robot = None
+    observation_stream = None
     try:
+        robot = LocomotionRobot()
+        observation_stream = create_observation_stream(configuration)
+        robot.enter_damping_mode()
+        robot.reset()
+
         while True:
             actions = np.zeros((robot.specification.joint_count,), dtype=np.float32)
             observations = robot.step(actions)
@@ -90,7 +97,10 @@ def run_idle_stream(configuration: PolicyDeploymentConfiguration) -> None:
     except KeyboardInterrupt:
         print("Stopping idle stream.")
     finally:
-        robot.stop()
+        if observation_stream is not None:
+            observation_stream.stop()
+        if robot is not None:
+            robot.stop()
 
 
 def check_locomotion_connection() -> None:
@@ -114,9 +124,10 @@ def run_policy_inference_smoke_test(configuration: PolicyDeploymentConfiguration
 
 def stream_gamepad_commands() -> None:
     command_source = GamepadCommandSource()
-    command_source.start()
 
     try:
+        command_source.start()
+
         while True:
             command = command_source.snapshot()
             print(
@@ -142,13 +153,14 @@ def broadcast_gamepad_commands(
         raise ValueError("rate_hz must be positive")
 
     command_source = GamepadCommandSource()
-    command_stream = create_gamepad_command_stream(host=host, port=port)
     rate = RateLimiter(rate_hz)
-    command_source.start()
-
-    print(f"Broadcasting gamepad commands to {host}:{port} at {rate_hz:.2f} Hz")
+    command_stream = None
 
     try:
+        command_source.start()
+        command_stream = create_gamepad_command_stream(host=host, port=port)
+        print(f"Broadcasting gamepad commands to {host}:{port} at {rate_hz:.2f} Hz")
+
         while True:
             command = command_source.snapshot()
             command_stream.send(encode_gamepad_command_packet(command))
@@ -165,4 +177,5 @@ def broadcast_gamepad_commands(
         print("Stopping gamepad UDP broadcast.")
     finally:
         command_source.stop()
-        command_stream.stop()
+        if command_stream is not None:
+            command_stream.stop()

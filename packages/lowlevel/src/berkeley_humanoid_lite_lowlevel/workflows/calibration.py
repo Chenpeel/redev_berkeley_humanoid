@@ -9,9 +9,10 @@ from berkeley_humanoid_lite_lowlevel.robot import (
 
 
 def run_joint_calibration() -> None:
-    robot = LocomotionRobot(enable_imu=False, enable_command_source=True)
+    robot = None
 
     try:
+        robot = LocomotionRobot(enable_imu=False, enable_command_source=True)
         position_offsets = capture_calibration_offsets(
             robot.specification,
             robot.actuators,
@@ -20,4 +21,5 @@ def run_joint_calibration() -> None:
         calibration_path = robot.calibration_store.save_position_offsets(position_offsets)
         print(f"saved calibration to {calibration_path}")
     finally:
-        robot.shutdown()
+        if robot is not None:
+            robot.shutdown()
