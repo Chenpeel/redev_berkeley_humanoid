@@ -37,31 +37,140 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
-Isaac 训练栈按需安装，包含：
 
-- `isaacsim[all,extscache]==5.1.0`
-- `isaacsim-core==5.1.0.0`
-- `isaaclab[isaacsim,all]==2.3.2.post1`
-- `rsl-rl-lib==3.0.1`
-- `torch==2.7.0`
-- `torchvision==0.22.0`
+## 模块指引
 
-需要以下入口时，先执行 `uv sync --all-packages --group dev --group training`：
+### assets
 
-- `apps/rsl_rl/train.py`
-- `apps/rsl_rl/play.py`
-- `apps/list_envs.py`
-- `apps/assets/convert_urdf_to_usd.py`
-
-## 训练
-
-运行前先安装 Isaac 训练依赖：
+- 管理 URDF / MJCF / USD 资源
+- 提供资源路径 API
+- 提供导出与转换 workflow
 
 ```bash
-uv sync --all-packages --group dev --group training
+uv run python apps/assets/export_onshape_to_urdf.py
+uv run python apps/assets/export_onshape_to_mjcf.py
+uv run python apps/assets/convert_urdf_to_usd.py
+uv run python apps/assets/prefetch_scene_material.py --preset isaac-shingles-01 --preset-version 5.1
+uv run python apps/assets/prefetch_scene_material.py --source /path/to/ground_surface.mdl
 ```
 
-可训练任务：
+其中 `apps/assets/convert_urdf_to_usd.py` 需要先安装 `training` 组。
+
+Isaac 场景会优先使用 `packages/assets/src/berkeley_humanoid_lite_assets/data/scenes/default/materials/` 下可用的 `.mdl` 材质文件；`--preset isaac-shingles-01 --preset-version 5.1` 会下载 `Shingles_01.mdl` 及配套贴图，不存在时回退到本地 preview 材质。
+
+### lowlevel
+
+- 电机连通性、配置读写、单电机调试
+- IMU / joystick / locomotion 运行时
+- 标定、策略部署、硬件配置管理
+
+#####  CAN
+
+> 扫描CAN
+
+```bash
+bash apps/lowlevel/start_can_transports.sh
+bash apps/lowlevel/stop_can_transports.sh
+```
+
+##### 基础检查
+```bash
+uv run python apps/lowlevel/check_connection.py
+uv run python apps/lowlevel/motor/ping.py --id 1
+uv run python apps/lowlevel/test_joystick.py
+```
+
+###### IMU 测试
+
+> Python 
+>
+> 默认自动检测协议 / 串口 / 波特率
+
+```bash
+uv run python apps/lowlevel/test_imu.py
+```
+
+> 显式指定 HiWonder IM10A 串口参数
+
+```bash
+uv run python apps/lowlevel/test_imu.py \
+  --protocol hiwonder \
+  --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+  --baudrate 9600
+```
+
+> C++ 
+>
+> 仅编译 IMU 测试程序
+
+```bash
+cmake -S packages/lowlevel/native -B build/lowlevel/native
+cmake --build build/lowlevel/native --target test-imu -j
+```
+
+> 默认自动检测协议 / 串口 / 波特率
+
+```bash
+./build/lowlevel/native/test-imu
+```
+
+> 显式指定 HiWonder IM10A 串口参数
+
+```bash
+./build/lowlevel/native/test-imu \
+  --protocol hiwonder \
+  --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+  --baudrate 9600
+```
+
+##### 标定与运行
+
+```bash
+uv run python apps/lowlevel/calibrate_joints.py
+uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml
+uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml
+```
+
+
+
+### teleop
+
+- teleoperation 求解
+- gripper / idle / 连接检测
+
+```bash
+uv run python apps/teleop/check_connection.py
+uv run python apps/teleop/run_idle.py
+uv run python apps/teleop/run_teleop.py
+uv run python apps/teleop/test_solver.py
+uv run python apps/teleop/test_gripper.py
+```
+
+### Sim
+
+- MuJoCo sim2sim
+- sim2real 观测流
+- Isaac 任务注册
+- 训练 workflow 与 checkpoint 管理
+
+```bash
+# MuJoCo policy 回放
+uv run python apps/sim2sim/play_mujoco.py --config configs/policies/policy_biped_50hz.yaml
+
+# sim2real 观测可视化
+uv run python apps/sim2real/visualize.py --config configs/policies/policy_biped_50hz.yaml
+
+# Isaac 任务列表
+uv run python apps/list_envs.py
+
+# 训练与回放
+uv run python apps/rsl_rl/train.py --task Velocity-Berkeley-Humanoid-Lite-v0 --headless
+uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --experiment_name humanoid --load_run '.*' --checkpoint 'model_.*\.pt' --headless
+```
+
+#### 训练
+
+运行前先安装 Isaac 训练依赖，可训练任务：
 
 - `Velocity-Berkeley-Humanoid-Lite-v0`
 - `Velocity-Berkeley-Humanoid-Lite-Biped-v0`
@@ -80,7 +189,7 @@ uv run python apps/rsl_rl/train.py \
   --headless
 ```
 
-常用可选参数：
+可选参数：
 
 - `--num_envs`
 - `--max_iterations`
@@ -115,83 +224,6 @@ uv run python apps/rsl_rl/play.py \
 
 - `configs/policies/policy_latest.yaml`
 
-## 模块
-
-### assets
-
-- 管理 URDF / MJCF / USD 资源
-- 提供资源路径 API
-- 提供导出与转换 workflow
-
-```bash
-uv run python apps/assets/export_onshape_to_urdf.py
-uv run python apps/assets/export_onshape_to_mjcf.py
-uv run python apps/assets/convert_urdf_to_usd.py
-uv run python apps/assets/prefetch_scene_material.py --preset isaac-shingles-01 --preset-version 5.1
-uv run python apps/assets/prefetch_scene_material.py --source /path/to/ground_surface.mdl
-```
-
-其中 `apps/assets/convert_urdf_to_usd.py` 需要先安装 `training` 组。
-
-Isaac 场景会优先使用 `packages/assets/src/berkeley_humanoid_lite_assets/data/scenes/default/materials/` 下可用的 `.mdl` 材质文件；`--preset isaac-shingles-01 --preset-version 5.1` 会下载 `Shingles_01.mdl` 及配套贴图，不存在时回退到本地 preview 材质。
-
-### lowlevel
-
-- 电机连通性、配置读写、单电机调试
-- IMU / joystick / locomotion 运行时
-- 标定、策略部署、硬件配置管理
-
-```bash
-# CAN
-bash apps/lowlevel/start_can_transports.sh
-bash apps/lowlevel/stop_can_transports.sh
-
-# 基础检查
-uv run python apps/lowlevel/check_connection.py
-uv run python apps/lowlevel/motor/ping.py --id 1
-uv run python apps/lowlevel/test_imu.py
-uv run python apps/lowlevel/test_joystick.py
-
-# 标定与运行
-uv run python apps/lowlevel/calibrate_joints.py
-uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml
-uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml
-```
-
-### teleop
-
-- teleoperation 求解
-- gripper / idle / 连接检测
-
-```bash
-uv run python apps/teleop/check_connection.py
-uv run python apps/teleop/run_idle.py
-uv run python apps/teleop/run_teleop.py
-uv run python apps/teleop/test_solver.py
-uv run python apps/teleop/test_gripper.py
-```
-
-### sim
-
-- MuJoCo sim2sim
-- sim2real 观测流
-- Isaac 任务注册
-- 训练 workflow 与 checkpoint 管理
-
-```bash
-# MuJoCo policy 回放
-uv run python apps/sim2sim/play_mujoco.py --config configs/policies/policy_biped_50hz.yaml
-
-# sim2real 观测可视化
-uv run python apps/sim2real/visualize.py --config configs/policies/policy_biped_50hz.yaml
-
-# Isaac 任务列表
-uv run python apps/list_envs.py
-
-# 训练与回放
-uv run python apps/rsl_rl/train.py --task Velocity-Berkeley-Humanoid-Lite-v0 --headless
-uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --experiment_name humanoid --load_run '.*' --checkpoint 'model_.*\.pt' --headless
-```
 
 ## 配置与产物
 
@@ -200,6 +232,7 @@ uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --ex
 - 标定产物：`artifacts/calibration/`
 - 训练日志与 checkpoint：`artifacts/untested_ckpts/rsl_rl/`
 - 默认部署配置：`configs/policies/policy_latest.yaml`
+
 
 ## 开发命令
 
