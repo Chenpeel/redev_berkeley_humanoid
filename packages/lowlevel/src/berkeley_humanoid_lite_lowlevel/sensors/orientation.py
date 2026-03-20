@@ -86,12 +86,17 @@ def _discover_orientation_devices() -> list[str]:
     return devices
 
 
+def discover_orientation_devices() -> list[str]:
+    """返回当前可用的 IMU 串口候选列表。"""
+    return _discover_orientation_devices()
+
+
 def resolve_orientation_device(device: str | None) -> str:
     """解析 IMU 串口路径，支持自动探测。"""
     if device and device != AUTO_DETECT_SERIAL_DEVICE:
         return device
 
-    devices = _discover_orientation_devices()
+    devices = discover_orientation_devices()
     if len(devices) == 1:
         return devices[0]
 

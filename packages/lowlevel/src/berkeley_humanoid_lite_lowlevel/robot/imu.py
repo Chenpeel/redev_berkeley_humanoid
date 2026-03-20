@@ -197,15 +197,24 @@ class SerialImu:
             #     return 921600
         return 0
 
-    def __init__(self, port: str = "/dev/ttyUSB0", baudrate: int = Baudrate.BAUD_115200, read_timeout=4):
+    def __init__(
+        self,
+        port: str = "/dev/ttyUSB0",
+        baudrate: int = Baudrate.BAUD_115200,
+        read_timeout=4,
+        *,
+        verbose: bool = False,
+    ):
         self.port: str = port
         self.baud: int = baudrate
         self.read_timeout: int = read_timeout
+        self.verbose: bool = verbose
 
         baudrate_int = self.baud_to_int(baudrate)
         self.ser: serial.Serial = serial.Serial(self.port, baudrate_int, timeout=self.read_timeout)
 
-        print("Serial is Opened:", self.ser.is_open)
+        if self.verbose:
+            print("Serial is Opened:", self.ser.is_open)
 
         self.is_stopped: threading.Event = threading.Event()
         self.is_stopped.clear()
@@ -233,10 +242,14 @@ class SerialImu:
         Parse a frame from the serial port.
         """
         start = self.ser.read(1)
+        if len(start) != 1:
+            return
         start, = struct.unpack("<B", start)
         if start != 0x55:
             return
         frame = self.ser.read(self.FRAME_LENGTH - 1)
+        if len(frame) != self.FRAME_LENGTH - 1:
+            return
 
         frame_type, data1, data2, data3, data4, sumcrc = struct.unpack("<BhhhhB", frame)
 
@@ -275,6 +288,10 @@ class SerialImu:
             self.quaternion[2] = data3 * 1.0 / 32768.0
             self.quaternion[3] = data4 * 1.0 / 32768.0
 
+    def read_frame(self) -> None:
+        """读取一帧 IMU 数据。"""
+        self.__read_frame()
+
     def run(self) -> None:
         """
         Start the IMU reading loop.
@@ -305,6 +322,11 @@ class SerialImu:
         Stop the IMU reading loop.
         """
         self.is_stopped.set()
+
+    def close(self) -> None:
+        """关闭 IMU 串口。"""
+        if self.ser.is_open:
+            self.ser.close()
 
     def unlock(self) -> None:
         """
