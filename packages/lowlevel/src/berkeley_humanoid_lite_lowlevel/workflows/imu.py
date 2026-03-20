@@ -440,10 +440,14 @@ def _stream_hiwonder(configuration: ImuStreamConfiguration, *, timeout: float) -
                 f"roll: {imu.angle[0]:7.2f} deg, "
                 f"pitch: {imu.angle[1]:7.2f} deg, "
                 f"yaw: {imu.angle[2]:7.2f} deg, "
-                f"gx: {imu.angular_velocity[0]:7.2f} deg/s, "
-                f"gy: {imu.angular_velocity[1]:7.2f} deg/s, "
-                f"gz: {imu.angular_velocity[2]:7.2f} deg/s, "
-                f"qw: {imu.quaternion[0]:6.3f}",
+                f"gx: {imu.angular_velocity[0]:8.3f} deg/s, "
+                f"gy: {imu.angular_velocity[1]:8.3f} deg/s, "
+                f"gz: {imu.angular_velocity[2]:8.3f} deg/s, "
+                f"quat(wxyz): "
+                f"{imu.quaternion[0]:7.4f} "
+                f"{imu.quaternion[1]:7.4f} "
+                f"{imu.quaternion[2]:7.4f} "
+                f"{imu.quaternion[3]:7.4f}",
                 end="\r",
             )
             time.sleep(0.05)

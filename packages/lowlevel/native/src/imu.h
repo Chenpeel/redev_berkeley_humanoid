@@ -47,8 +47,8 @@ struct IMUCliOptions {
 struct IMUConfiguration {
   IMUProtocol protocol = IMUProtocol::HIWONDER;
   std::string device;
-  speed_t baudrate = B9600;
-  int baudrate_value = 9600;
+  speed_t baudrate = B460800;
+  int baudrate_value = 460800;
   double timeout = DEFAULT_IMU_TIMEOUT;
 };
 
@@ -95,4 +95,3 @@ class IMU {
     bool read_packet_frame();
     bool read_hiwonder_frame();
 };
-

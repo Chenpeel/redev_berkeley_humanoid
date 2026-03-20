@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
       imu.update_reading();
 
       printf(
-          "qpos: %.3f %.3f %.3f %.3f | gyro(rad/s): %.3f %.3f %.3f | angle(deg): %.2f %.2f %.2f\n",
+          "quat(wxyz): %.3f %.3f %.3f %.3f | gyro(rad/s): %.4f %.4f %.4f | angle(deg): %.2f %.2f %.2f\n",
           imu.quaternion[0],
           imu.quaternion[1],
           imu.quaternion[2],
