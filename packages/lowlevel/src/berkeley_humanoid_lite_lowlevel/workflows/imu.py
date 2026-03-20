@@ -188,6 +188,36 @@ def detect_imu_stream(
     )
 
 
+def resolve_imu_stream_configuration(
+    *,
+    protocol: str = DEFAULT_IMU_PROTOCOL,
+    device: str = DEFAULT_IMU_SERIAL_DEVICE,
+    baudrate: str | int | None = DEFAULT_IMU_BAUDRATE,
+    timeout: float = DEFAULT_IMU_TIMEOUT,
+    probe_duration: float = DEFAULT_IMU_PROBE_DURATION,
+) -> ImuStreamConfiguration:
+    """解析最终 IMU 配置；显式参数完整时直接使用，含 auto 时再走探测。"""
+    normalized_baudrate = parse_baudrate_argument(baudrate)
+    if (
+        protocol != _PROTOCOL_AUTO
+        and device != AUTO_DETECT_SERIAL_DEVICE
+        and normalized_baudrate is not None
+    ):
+        return ImuStreamConfiguration(
+            protocol=protocol,
+            device=device,
+            baudrate=normalized_baudrate,
+        )
+
+    return detect_imu_stream(
+        protocol=protocol,
+        device=device,
+        baudrate=normalized_baudrate,
+        timeout=timeout,
+        probe_duration=probe_duration,
+    )
+
+
 def _stream_packet(configuration: ImuStreamConfiguration, *, timeout: float) -> None:
     with SerialOrientationStream(configuration.device, baudrate=configuration.baudrate, timeout=timeout) as orientation_stream:
         print(
@@ -257,7 +287,7 @@ def stream_orientation(
     probe_duration: float = DEFAULT_IMU_PROBE_DURATION,
 ) -> None:
     """持续输出串口 IMU 姿态数据，支持自动探测协议和波特率。"""
-    configuration = detect_imu_stream(
+    configuration = resolve_imu_stream_configuration(
         protocol=protocol,
         device=device,
         baudrate=baudrate,

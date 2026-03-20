@@ -10,6 +10,7 @@ from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     detect_imu_stream,
     normalize_hiwonder_baudrate,
     parse_baudrate_argument,
+    resolve_imu_stream_configuration,
 )
 from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate
 
@@ -84,6 +85,19 @@ class ImuWorkflowTests(unittest.TestCase):
             )
 
         imu.close.assert_called_once()
+
+    def test_resolve_imu_stream_configuration_skips_detection_when_explicit(self) -> None:
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.detect_imu_stream",
+            side_effect=AssertionError("detect_imu_stream should not be called"),
+        ):
+            configuration = resolve_imu_stream_configuration(
+                protocol="hiwonder",
+                device="/dev/ttyUSB0",
+                baudrate="460800",
+            )
+
+        self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800))
 
 
 if __name__ == "__main__":
