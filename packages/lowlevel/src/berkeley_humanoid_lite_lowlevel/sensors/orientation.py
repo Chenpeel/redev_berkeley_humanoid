@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from glob import glob
 import math
+import os
 import struct
 import time
 from typing import BinaryIO
@@ -13,6 +15,18 @@ _SYNC_1 = b"\x75"
 _SYNC_2 = b"\x65"
 _EXPECTED_FLOAT_COUNT = 7
 _EXPECTED_PAYLOAD_SIZE = _EXPECTED_FLOAT_COUNT * 4
+AUTO_DETECT_SERIAL_DEVICE = "auto"
+_PREFERRED_DEVICE_CANDIDATES = (
+    "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:4.1:1.0",
+    "/dev/serial/by-path/pci-0000:00:14.0-usb-0:4:1.0",
+)
+_DEVICE_GLOB_PATTERNS = (
+    "/dev/serial/by-id/*",
+    "/dev/serial/by-path/*",
+    "/dev/ttyUSB*",
+    "/dev/ttyACM*",
+)
 
 
 @dataclass(frozen=True)
@@ -42,6 +56,58 @@ class OrientationSample:
         yaw = math.atan2(sin_yaw, cos_yaw)
 
         return tuple(math.degrees(angle) for angle in (roll, pitch, yaw))
+
+
+def _discover_orientation_devices() -> list[str]:
+    """按优先级收集当前可用的 IMU 串口路径。"""
+    devices: list[str] = []
+    seen_targets: set[str] = set()
+
+    for candidate in _PREFERRED_DEVICE_CANDIDATES:
+        if not os.path.exists(candidate):
+            continue
+
+        resolved = os.path.realpath(candidate)
+        if resolved in seen_targets:
+            continue
+
+        seen_targets.add(resolved)
+        devices.append(candidate)
+
+    for pattern in _DEVICE_GLOB_PATTERNS:
+        for candidate in sorted(glob(pattern)):
+            resolved = os.path.realpath(candidate)
+            if resolved in seen_targets:
+                continue
+
+            seen_targets.add(resolved)
+            devices.append(candidate)
+
+    return devices
+
+
+def resolve_orientation_device(device: str | None) -> str:
+    """解析 IMU 串口路径，支持自动探测。"""
+    if device and device != AUTO_DETECT_SERIAL_DEVICE:
+        return device
+
+    devices = _discover_orientation_devices()
+    if len(devices) == 1:
+        return devices[0]
+
+    if not devices:
+        searched_patterns = ", ".join(_DEVICE_GLOB_PATTERNS)
+        raise serial.SerialException(
+            "No IMU serial device found. "
+            f"Checked common paths and patterns: {searched_patterns}. "
+            "Pass --device to specify the serial port explicitly."
+        )
+
+    available_devices = ", ".join(devices)
+    raise serial.SerialException(
+        "Multiple serial devices found. "
+        f"Pass --device to select one explicitly: {available_devices}"
+    )
 
 
 def read_orientation_sample(
@@ -80,11 +146,11 @@ def read_orientation_sample(
 class SerialOrientationStream:
     """串口姿态串流读取器。"""
 
-    def __init__(self, device: str, *, baudrate: int, timeout: float) -> None:
-        self.device = device
+    def __init__(self, device: str | None, *, baudrate: int, timeout: float) -> None:
+        self.device = resolve_orientation_device(device)
         self.baudrate = baudrate
         self.timeout = timeout
-        self._serial = serial.Serial(device, baudrate, timeout=timeout)
+        self._serial = serial.Serial(self.device, baudrate, timeout=timeout)
 
     def read_sample(self) -> OrientationSample | None:
         """读取一帧姿态样本。"""

@@ -4,8 +4,15 @@ from io import BytesIO
 import math
 import struct
 import unittest
+from unittest import mock
+
+import serial
 
 from berkeley_humanoid_lite_lowlevel.sensors import OrientationSample, read_orientation_sample
+from berkeley_humanoid_lite_lowlevel.sensors.orientation import (
+    AUTO_DETECT_SERIAL_DEVICE,
+    resolve_orientation_device,
+)
 
 
 def _build_frame(*values: float, payload_size: int = 28) -> bytes:
@@ -16,6 +23,35 @@ def _build_frame(*values: float, payload_size: int = 28) -> bytes:
 
 
 class OrientationStreamTests(unittest.TestCase):
+    def test_resolve_orientation_device_returns_explicit_path(self) -> None:
+        self.assertEqual(resolve_orientation_device("/dev/ttyUSB9"), "/dev/ttyUSB9")
+
+    def test_resolve_orientation_device_uses_single_detected_device(self) -> None:
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.sensors.orientation._discover_orientation_devices",
+            return_value=["/dev/serial/by-id/imu"],
+        ):
+            self.assertEqual(
+                resolve_orientation_device(AUTO_DETECT_SERIAL_DEVICE),
+                "/dev/serial/by-id/imu",
+            )
+
+    def test_resolve_orientation_device_rejects_missing_device(self) -> None:
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.sensors.orientation._discover_orientation_devices",
+            return_value=[],
+        ):
+            with self.assertRaises(serial.SerialException):
+                resolve_orientation_device(AUTO_DETECT_SERIAL_DEVICE)
+
+    def test_resolve_orientation_device_rejects_multiple_devices(self) -> None:
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.sensors.orientation._discover_orientation_devices",
+            return_value=["/dev/ttyUSB0", "/dev/ttyUSB1"],
+        ):
+            with self.assertRaises(serial.SerialException):
+                resolve_orientation_device(AUTO_DETECT_SERIAL_DEVICE)
+
     def test_read_orientation_sample_parses_valid_frame(self) -> None:
         stream = BytesIO(_build_frame(1.0, 0.0, 0.0, 0.0, 0.1, -0.2, 0.3))
 

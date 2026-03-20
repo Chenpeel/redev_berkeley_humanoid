@@ -3,9 +3,10 @@ from __future__ import annotations
 import time
 
 from berkeley_humanoid_lite_lowlevel.sensors import SerialOrientationStream
+from berkeley_humanoid_lite_lowlevel.sensors.orientation import AUTO_DETECT_SERIAL_DEVICE
 
 
-DEFAULT_IMU_SERIAL_DEVICE = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:4.1:1.0"
+DEFAULT_IMU_SERIAL_DEVICE = AUTO_DETECT_SERIAL_DEVICE
 DEFAULT_IMU_BAUDRATE = 1_000_000
 DEFAULT_IMU_TIMEOUT = 0.001
 
@@ -18,6 +19,7 @@ def stream_orientation(
 ) -> None:
     """持续输出串口姿态数据。"""
     with SerialOrientationStream(device, baudrate=baudrate, timeout=timeout) as orientation_stream:
+        print(f"Streaming orientation from {orientation_stream.device}")
         try:
             while True:
                 frame_started_at = time.perf_counter()
