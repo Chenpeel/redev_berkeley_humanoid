@@ -151,6 +151,30 @@ make lowlevel-run-udp-test
 
 ###### IMU 测试
 
+> 推荐配置
+>
+> 对 HiWonder IM10A，建议先切到高波特率并压缩输出内容，
+> 避免在 `9600` 下因为输出帧过多导致 `gyro` 帧不稳定。
+>
+> 下面这条命令会把 IMU 配置为：
+>
+> - 波特率 `460800`
+> - 采样率 `100 Hz`
+> - 输出内容仅保留 `angular_velocity + angle + quaternion`
+> - `--save` 会把配置保存到设备，掉电后仍然生效
+
+```bash
+uv run python apps/lowlevel/configure_imu.py \
+  --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+  --baudrate 9600 \
+  --set-baudrate 460800 \
+  --rate-hz 100 \
+  --profile control \
+  --save
+```
+
+> 如果之后已经保存为 `460800`，再次调整输出内容时，把 `--baudrate` 改成 `460800` 即可。
+
 > Python 
 >
 > 默认自动检测协议 / 串口 / 波特率
@@ -165,7 +189,7 @@ uv run python apps/lowlevel/test_imu.py
 uv run python apps/lowlevel/test_imu.py \
   --protocol hiwonder \
   --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
-  --baudrate 9600
+  --baudrate 460800
 ```
 
 > C++ 
@@ -188,7 +212,7 @@ make lowlevel-run-imu-test
 make lowlevel-run-imu-test IMU_TEST_ARGS="\
   --protocol hiwonder \
   --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
-  --baudrate 9600"
+  --baudrate 460800"
 ```
 
 ##### 标定与运行
@@ -209,7 +233,7 @@ make lowlevel-run
 make lowlevel-run LOWLEVEL_ARGS="\
   --protocol hiwonder \
   --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
-  --baudrate 9600"
+  --baudrate 460800"
 ```
 
 > Python 标定与运行脚本
