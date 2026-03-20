@@ -3,7 +3,6 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-
 __all__ = [
     "check_actuator_connection",
     "configure_actuator",
@@ -14,6 +13,7 @@ __all__ = [
     "apply_robot_configuration",
     "export_robot_configuration",
     "stream_orientation",
+    "configure_hiwonder_output",
     "check_locomotion_connection",
     "run_idle_stream",
     "run_locomotion_loop",
@@ -64,6 +64,10 @@ _MODULE_EXPORTS = {
     "stream_orientation": (
         "berkeley_humanoid_lite_lowlevel.workflows.imu",
         "stream_orientation",
+    ),
+    "configure_hiwonder_output": (
+        "berkeley_humanoid_lite_lowlevel.workflows.imu",
+        "configure_hiwonder_output",
     ),
     "check_locomotion_connection": (
         "berkeley_humanoid_lite_lowlevel.workflows.locomotion",

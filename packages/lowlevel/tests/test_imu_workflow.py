@@ -3,16 +3,19 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate, SamplingRate
 from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     ImuStreamConfiguration,
     _build_probe_configurations,
     _probe_hiwonder,
+    configure_hiwonder_output,
     detect_imu_stream,
     normalize_hiwonder_baudrate,
+    normalize_hiwonder_sampling_rate,
     parse_baudrate_argument,
+    resolve_hiwonder_output_content,
     resolve_imu_stream_configuration,
 )
-from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate
 
 
 class ImuWorkflowTests(unittest.TestCase):
@@ -27,6 +30,27 @@ class ImuWorkflowTests(unittest.TestCase):
 
     def test_normalize_hiwonder_baudrate_accepts_enum_code(self) -> None:
         self.assertEqual(normalize_hiwonder_baudrate(Baudrate.BAUD_460800), Baudrate.BAUD_460800)
+
+    def test_normalize_hiwonder_sampling_rate_accepts_supported_rate(self) -> None:
+        self.assertEqual(normalize_hiwonder_sampling_rate(10), SamplingRate.RATE_10_HZ)
+
+    def test_resolve_hiwonder_output_content_uses_profile_defaults(self) -> None:
+        output_content = resolve_hiwonder_output_content(profile="control")
+
+        self.assertTrue(output_content["angular_velocity"])
+        self.assertTrue(output_content["angle"])
+        self.assertTrue(output_content["quaternion"])
+        self.assertFalse(output_content["acceleration"])
+
+    def test_resolve_hiwonder_output_content_allows_explicit_overrides(self) -> None:
+        output_content = resolve_hiwonder_output_content(
+            profile="control",
+            acceleration_output=True,
+            quaternion_output=False,
+        )
+
+        self.assertTrue(output_content["acceleration"])
+        self.assertFalse(output_content["quaternion"])
 
     def test_build_probe_configurations_prefers_hiwonder_candidates(self) -> None:
         with mock.patch(
@@ -101,6 +125,45 @@ class ImuWorkflowTests(unittest.TestCase):
                 baudrate="460800",
             )
 
+        self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800))
+
+    def test_configure_hiwonder_output_applies_baudrate_sampling_and_output_content(self) -> None:
+        imu = mock.Mock()
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.resolve_imu_stream_configuration",
+            return_value=ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 9600),
+        ), mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.SerialImu",
+            return_value=imu,
+        ), mock.patch("berkeley_humanoid_lite_lowlevel.workflows.imu.time.sleep"):
+            configuration = configure_hiwonder_output(
+                device="/dev/ttyUSB0",
+                baudrate="9600",
+                target_baudrate=460800,
+                rate_hz=10.0,
+                profile="control",
+                save=True,
+            )
+
+        imu.unlock.assert_called_once_with()
+        imu.set_baudrate.assert_called_once_with(Baudrate.BAUD_460800)
+        imu.set_sampling_rate.assert_called_once_with(SamplingRate.RATE_10_HZ)
+        imu.set_output_content.assert_called_once_with(
+            time=False,
+            acceleration=False,
+            angular_velocity=True,
+            angle=True,
+            magnetic_field=False,
+            port_status=False,
+            pressure=False,
+            gps=False,
+            velocity=False,
+            quaternion=True,
+            gps_position_accuracy=False,
+        )
+        imu.save.assert_called_once_with()
+        imu.close.assert_called_once_with()
         self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800))
 
 
