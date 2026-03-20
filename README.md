@@ -108,6 +108,34 @@ cmake --build build/lowlevel/native --target test-udp -j
 ./build/lowlevel/native/test-udp
 ```
 
+> 蓝牙连接手柄
+>
+> 以 类Xbox 为例，测试使用的是PXN，Linux 配对完成后可继续使用上面的 `test_joystick.py` 和 `udp_joystick.py`
+
+```bash
+sudo systemctl enable --now bluetooth
+bluetoothctl
+# 在 bluetoothctl 中依次执行
+power on
+agent on
+default-agent
+scan on
+# 手柄进入配对模式后，记录扫描到的 MAC 地址
+# MAC_Addr="98:B6:EA:18:D8:07" 这是我的手柄的MAC
+# 自行通过类似 Xbox Controller 等类似的字眼查找对应的MAC
+pair ${MAC_Addr}
+trust ${MAC_Addr}
+connect {MAC_Addr}
+exit
+```
+
+> 蓝牙连接验证
+
+```bash
+ls -l /dev/input/by-id | grep -i -E 'nintendo|joystick'
+uv run python -c "from inputs import devices; print(devices.gamepads)"
+```
+
 ###### IMU 测试
 
 > Python 
