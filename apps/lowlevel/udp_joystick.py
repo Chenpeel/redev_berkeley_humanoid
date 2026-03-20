@@ -1,5 +1,6 @@
 import argparse
 
+from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
 from berkeley_humanoid_lite_lowlevel.workflows import broadcast_gamepad_commands
 from berkeley_humanoid_lite_lowlevel.workflows.locomotion import (
     DEFAULT_GAMEPAD_UDP_HOST,
@@ -38,4 +39,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_with_friendly_gamepad_errors(main)

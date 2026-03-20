@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import threading
+from dataclasses import dataclass
 
 try:
-    from inputs import get_gamepad
+    from inputs import UnpluggedError, devices, get_gamepad
 except ImportError as import_error:  # pragma: no cover - 依赖缺失时在真实运行环境暴露
+    UnpluggedError = None
+    devices = None
     get_gamepad = None
     _GAMEPAD_IMPORT_ERROR = import_error
 else:  # pragma: no cover - 仅在真实硬件环境下执行
@@ -27,6 +29,30 @@ class XInputCode:
     BTN_THUMB_R = "BTN_THUMBR"
 
 
+class GamepadInputError(RuntimeError):
+    """手柄输入不可用时抛出的统一异常。"""
+
+
+class GamepadDependencyError(GamepadInputError):
+    """缺少手柄输入依赖。"""
+
+
+class GamepadUnavailableError(GamepadInputError):
+    """未检测到可用手柄，或运行中断开连接。"""
+
+
+def _build_dependency_error() -> GamepadDependencyError:
+    return GamepadDependencyError(
+        "缺少 `inputs` 依赖，无法读取手柄输入。请先安装依赖后再重试。"
+    )
+
+
+def _build_unavailable_error() -> GamepadUnavailableError:
+    return GamepadUnavailableError(
+        "未检测到可用手柄。请先连接手柄，并确认系统已经识别该设备后再重试。"
+    )
+
+
 @dataclass(frozen=True)
 class LocomotionCommand:
     requested_state: LocomotionControlState
@@ -35,7 +61,7 @@ class LocomotionCommand:
     velocity_yaw: float
 
     @classmethod
-    def zero(cls) -> "LocomotionCommand":
+    def zero(cls) -> LocomotionCommand:
         return cls(
             requested_state=LocomotionControlState.INVALID,
             velocity_x=0.0,
@@ -90,6 +116,7 @@ class GamepadCommandSource:
         self.dead_zone = dead_zone
         self._stopped = threading.Event()
         self._thread: threading.Thread | None = None
+        self._failure: GamepadInputError | None = None
         self._states = self._create_initial_states()
         self.command = LocomotionCommand.zero()
 
@@ -109,9 +136,16 @@ class GamepadCommandSource:
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
+            self.raise_if_failed()
             return
+        self._ensure_available()
         self._stopped.clear()
-        self._thread = threading.Thread(target=self.run_forever, daemon=True)
+        self._failure = None
+        self._thread = threading.Thread(
+            target=self.run_forever,
+            daemon=True,
+            name="gamepad-command-source",
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -119,13 +153,27 @@ class GamepadCommandSource:
 
     def run_forever(self) -> None:
         while not self._stopped.is_set():
-            self.advance()
+            try:
+                self.advance()
+            except GamepadInputError as error:
+                self._failure = error
+                self._stopped.set()
+            except Exception as error:  # pragma: no cover - 只在真实设备异常时触发
+                self._failure = GamepadInputError(f"读取手柄输入失败：{error}")
+                self._stopped.set()
 
     def advance(self) -> None:
         if get_gamepad is None:  # pragma: no cover - 依赖缺失只在真实运行时触发
-            raise RuntimeError("缺少 inputs 依赖，无法读取手柄输入。") from _GAMEPAD_IMPORT_ERROR
+            raise _build_dependency_error() from _GAMEPAD_IMPORT_ERROR
 
-        for event in get_gamepad():
+        try:
+            events = get_gamepad()
+        except Exception as error:  # pragma: no cover - 依赖真实设备触发
+            if UnpluggedError is not None and isinstance(error, UnpluggedError):
+                raise _build_unavailable_error() from error
+            raise
+
+        for event in events:
             self._states[event.code] = event.state
 
         self.command = build_command_from_states(
@@ -135,4 +183,19 @@ class GamepadCommandSource:
         )
 
     def snapshot(self) -> LocomotionCommand:
+        self.raise_if_failed()
         return self.command
+
+    def raise_if_failed(self) -> None:
+        if self._failure is not None:
+            raise self._failure
+
+    def _ensure_available(self) -> None:
+        if get_gamepad is None:  # pragma: no cover - 依赖缺失只在真实运行时触发
+            raise _build_dependency_error() from _GAMEPAD_IMPORT_ERROR
+
+        if devices is None:  # pragma: no cover - 防御性分支
+            raise _build_unavailable_error()
+
+        if not devices.gamepads:
+            raise _build_unavailable_error()

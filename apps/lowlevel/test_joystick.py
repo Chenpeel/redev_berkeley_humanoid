@@ -6,6 +6,7 @@ Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 Stream the latest locomotion command decoded from the gamepad.
 """
 
+from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
 from berkeley_humanoid_lite_lowlevel.workflows import stream_gamepad_commands
 
 
@@ -14,4 +15,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_with_friendly_gamepad_errors(main)

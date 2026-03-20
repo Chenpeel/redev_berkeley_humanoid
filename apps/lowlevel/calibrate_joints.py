@@ -6,6 +6,7 @@ Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 Run this script after each power cycle to calibrate the encoder offset of each joint.
 """
 
+from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
 from berkeley_humanoid_lite_lowlevel.workflows import run_joint_calibration
 
 
@@ -14,4 +15,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_with_friendly_gamepad_errors(main)
