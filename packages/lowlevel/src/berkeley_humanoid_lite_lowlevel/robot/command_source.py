@@ -46,6 +46,13 @@ class GamepadUnavailableError(GamepadInputError):
     """未检测到可用手柄，或运行中断开连接。"""
 
 
+AXIS_CODES = (
+    XInputCode.AXIS_X_L,
+    XInputCode.AXIS_Y_L,
+    XInputCode.AXIS_X_R,
+)
+
+
 def _build_dependency_error() -> GamepadDependencyError:
     return GamepadDependencyError(
         "缺少 `inputs` 依赖，无法读取手柄输入。请先安装依赖后再重试。"
@@ -160,6 +167,23 @@ def _register_discovered_gamepads() -> None:
         devices.all_devices.extend(discovered_gamepads)
 
 
+def _normalize_axis_value(
+    raw_value: int,
+    *,
+    mode: str | None,
+    stick_sensitivity: float,
+    dead_zone: float,
+) -> float:
+    if mode == "unsigned":
+        value = ((32768.0 - raw_value) / 32768.0) * stick_sensitivity
+    else:
+        value = (raw_value / -32768.0) * stick_sensitivity
+
+    if abs(value) < dead_zone:
+        return 0.0
+    return max(-1.0, min(1.0, value))
+
+
 @dataclass(frozen=True)
 class LocomotionCommand:
     requested_state: LocomotionControlState
@@ -182,13 +206,19 @@ def build_command_from_states(
     *,
     stick_sensitivity: float = 1.0,
     dead_zone: float = 0.01,
+    axis_modes: dict[str, str] | None = None,
 ) -> LocomotionCommand:
     def normalize(code: str) -> float:
         raw_value = states.get(code, 0)
-        value = (raw_value / -32768.0) * stick_sensitivity
-        if abs(value) < dead_zone:
-            return 0.0
-        return max(-1.0, min(1.0, value))
+        mode = None if axis_modes is None else axis_modes.get(code)
+        if mode is None and raw_value > 32767:
+            mode = "unsigned"
+        return _normalize_axis_value(
+            raw_value,
+            mode=mode,
+            stick_sensitivity=stick_sensitivity,
+            dead_zone=dead_zone,
+        )
 
     requested_state = LocomotionControlState.INVALID
     if states.get(XInputCode.BTN_A) and states.get(XInputCode.BTN_BUMPER_R):
@@ -225,6 +255,7 @@ class GamepadCommandSource:
         self._thread: threading.Thread | None = None
         self._failure: GamepadInputError | None = None
         self._states = self._create_initial_states()
+        self._axis_modes: dict[str, str] = {}
         self.command = LocomotionCommand.zero()
 
     @staticmethod
@@ -285,11 +316,17 @@ class GamepadCommandSource:
 
         for event in events:
             self._states[event.code] = event.state
+            if event.code in AXIS_CODES:
+                if event.state > 32767:
+                    self._axis_modes[event.code] = "unsigned"
+                elif event.state < 0:
+                    self._axis_modes[event.code] = "signed"
 
         self.command = build_command_from_states(
             self._states,
             stick_sensitivity=self.stick_sensitivity,
             dead_zone=self.dead_zone,
+            axis_modes=self._axis_modes,
         )
 
     def snapshot(self) -> LocomotionCommand:

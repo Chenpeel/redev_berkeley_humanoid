@@ -89,6 +89,29 @@ class GamepadInputTests(unittest.TestCase):
         register_discovered_gamepads.assert_called_once_with()
         self.assertAlmostEqual(command_source.snapshot().velocity_yaw, -1234 / 32768.0)
 
+    def test_command_source_tracks_unsigned_axis_modes_for_bluetooth_gamepads(self) -> None:
+        command_source = GamepadCommandSource(dead_zone=0.0)
+        fake_devices = SimpleNamespace(gamepads=[object()])
+        events = [
+            SimpleNamespace(code="ABS_X", state=32768),
+            SimpleNamespace(code="ABS_Y", state=32768),
+            SimpleNamespace(code="ABS_RX", state=32768),
+        ]
+
+        with (
+            patch.object(command_source_module, "devices", fake_devices),
+            patch.object(command_source_module, "get_gamepad", return_value=events),
+        ):
+            command_source.advance()
+
+        self.assertEqual(
+            command_source._axis_modes,
+            {"ABS_X": "unsigned", "ABS_Y": "unsigned", "ABS_RX": "unsigned"},
+        )
+        self.assertEqual(command_source.snapshot().velocity_x, 0.0)
+        self.assertEqual(command_source.snapshot().velocity_y, 0.0)
+        self.assertEqual(command_source.snapshot().velocity_yaw, 0.0)
+
     def test_command_source_start_fails_fast_when_no_gamepad_is_detected(self) -> None:
         command_source = GamepadCommandSource()
 

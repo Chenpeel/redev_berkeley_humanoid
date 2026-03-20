@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
-
 from berkeley_humanoid_lite_lowlevel.robot.command_source import build_command_from_states
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
@@ -38,6 +37,30 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
         np.testing.assert_allclose(
             np.array([command.velocity_x, command.velocity_y, command.velocity_yaw], dtype=np.float32),
             np.array([-0.25, 1.0, 0.5], dtype=np.float32),
+        )
+
+    def test_build_command_from_states_supports_unsigned_linux_axis_ranges(self) -> None:
+        states = {
+            "ABS_X": 32768,
+            "ABS_Y": 32768,
+            "ABS_RX": 49152,
+        }
+
+        command = build_command_from_states(
+            states,
+            stick_sensitivity=1.0,
+            dead_zone=0.0,
+            axis_modes={
+                "ABS_X": "unsigned",
+                "ABS_Y": "unsigned",
+                "ABS_RX": "unsigned",
+            },
+        )
+
+        np.testing.assert_allclose(
+            np.array([command.velocity_x, command.velocity_y, command.velocity_yaw], dtype=np.float32),
+            np.array([0.0, -0.5, 0.0], dtype=np.float32),
+            atol=1e-4,
         )
 
 
