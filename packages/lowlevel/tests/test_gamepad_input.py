@@ -77,7 +77,11 @@ class GamepadInputTests(unittest.TestCase):
 
         with (
             patch.object(command_source_module, "devices", fake_devices),
-            patch.object(command_source_module, "_register_discovered_gamepads", side_effect=register_fallback) as register_discovered_gamepads,
+            patch.object(
+                command_source_module,
+                "_register_discovered_gamepads",
+                side_effect=register_fallback,
+            ) as register_discovered_gamepads,
             patch.object(command_source_module, "get_gamepad", return_value=[fake_event]),
         ):
             command_source.advance()
