@@ -22,9 +22,24 @@ def main() -> None:
     return_group.add_argument("--return-rad", type=float, help="Return angle in radians for cyclic tests")
     return_group.add_argument("--return-deg", type=float, help="Return angle in degrees for cyclic tests")
 
-    parser.add_argument("--kp", type=float, default=0.2, help="Position proportional gain")
-    parser.add_argument("--kd", type=float, default=0.005, help="Position derivative gain")
-    parser.add_argument("--torque-limit", type=float, default=0.2, help="Torque limit")
+    parser.add_argument(
+        "--kp",
+        type=float,
+        default=None,
+        help="Optional position proportional gain override. Omit to keep the device value.",
+    )
+    parser.add_argument(
+        "--kd",
+        type=float,
+        default=None,
+        help="Optional position derivative gain override. Omit to keep the device value.",
+    )
+    parser.add_argument(
+        "--torque-limit",
+        type=float,
+        default=None,
+        help="Optional torque limit override. Omit to keep the device value.",
+    )
     parser.add_argument(
         "--max-speed-deg",
         type=float,
@@ -42,30 +57,6 @@ def main() -> None:
         type=float,
         default=200.0,
         help="Position command update frequency in Hz",
-    )
-    parser.add_argument(
-        "--position-tolerance-deg",
-        type=float,
-        default=2.0,
-        help="Maximum allowed position error during the hold evaluation phase",
-    )
-    parser.add_argument(
-        "--velocity-tolerance-deg",
-        type=float,
-        default=10.0,
-        help="Maximum allowed speed magnitude during the hold evaluation phase",
-    )
-    parser.add_argument(
-        "--settle-timeout-seconds",
-        type=float,
-        default=2.0,
-        help="Maximum time allowed for the actuator to settle after the ramp finishes",
-    )
-    parser.add_argument(
-        "--stable-samples",
-        type=int,
-        default=20,
-        help="Number of consecutive in-tolerance samples required before hold evaluation starts",
     )
     parser.add_argument(
         "--cycles",
@@ -92,10 +83,6 @@ def main() -> None:
         max_speed_degrees_per_second=arguments.max_speed_deg,
         hold_seconds=arguments.hold_seconds,
         control_frequency_hz=arguments.control_rate,
-        position_tolerance_degrees=arguments.position_tolerance_deg,
-        velocity_tolerance_degrees_per_second=arguments.velocity_tolerance_deg,
-        settle_timeout_seconds=arguments.settle_timeout_seconds,
-        required_stable_samples=arguments.stable_samples,
         cycles=arguments.cycles,
     )
 

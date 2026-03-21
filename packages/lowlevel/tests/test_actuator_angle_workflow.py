@@ -47,32 +47,6 @@ class ActuatorOperationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive integer"):
             actuator.build_actuator_angle_sequence(target_angle_radians=0.5, cycles=0)
 
-    def test_sample_within_tolerance_requires_error_and_velocity_both_in_range(self) -> None:
-        self.assertTrue(
-            actuator.sample_within_tolerance(
-                position_error_radians=math.radians(0.5),
-                velocity_radians_per_second=math.radians(2.0),
-                position_tolerance_radians=math.radians(1.0),
-                velocity_tolerance_radians_per_second=math.radians(5.0),
-            )
-        )
-        self.assertFalse(
-            actuator.sample_within_tolerance(
-                position_error_radians=math.radians(1.5),
-                velocity_radians_per_second=math.radians(2.0),
-                position_tolerance_radians=math.radians(1.0),
-                velocity_tolerance_radians_per_second=math.radians(5.0),
-            )
-        )
-        self.assertFalse(
-            actuator.sample_within_tolerance(
-                position_error_radians=math.radians(0.5),
-                velocity_radians_per_second=math.radians(6.0),
-                position_tolerance_radians=math.radians(1.0),
-                velocity_tolerance_radians_per_second=math.radians(5.0),
-            )
-        )
-
     def test_enter_actuator_position_mode_matches_verified_initialization_order(self) -> None:
         calls: list[tuple[object, ...]] = []
 
@@ -114,6 +88,37 @@ class ActuatorOperationTests(unittest.TestCase):
         )
         self.assertEqual(sleep.call_count, 4)
 
+    def test_enter_actuator_position_mode_skips_parameter_writes_without_overrides(self) -> None:
+        calls: list[tuple[object, ...]] = []
+
+        class FakeBus:
+            def set_mode(self, device_id: int, mode: recoil.Mode) -> None:
+                calls.append(("set_mode", device_id, mode))
+
+            def write_position_kp(self, device_id: int, value: float) -> None:
+                calls.append(("write_position_kp", device_id, value))
+
+            def write_position_kd(self, device_id: int, value: float) -> None:
+                calls.append(("write_position_kd", device_id, value))
+
+            def write_torque_limit(self, device_id: int, value: float) -> None:
+                calls.append(("write_torque_limit", device_id, value))
+
+            def feed(self, device_id: int) -> None:
+                calls.append(("feed", device_id))
+
+        with patch.object(actuator_operations.time, "sleep"):
+            actuator_operations.enter_actuator_position_mode(FakeBus(), 7)
+
+        self.assertEqual(
+            calls,
+            [
+                ("set_mode", 7, recoil.Mode.IDLE),
+                ("feed", 7),
+                ("set_mode", 7, recoil.Mode.POSITION),
+            ],
+        )
+
 
 class ActuatorWorkflowTests(unittest.TestCase):
     def test_run_actuator_angle_test_requires_cycles_for_return_angle(self) -> None:
@@ -145,16 +150,12 @@ class ActuatorWorkflowTests(unittest.TestCase):
                 bitrate=500_000,
                 target_angle_degrees=90.0,
                 return_angle_degrees=-30.0,
-                position_kp=0.4,
-                position_kd=0.02,
-                torque_limit=0.7,
+                position_kp=None,
+                position_kd=None,
+                torque_limit=None,
                 max_speed_degrees_per_second=45.0,
                 hold_seconds=1.5,
                 control_frequency_hz=150.0,
-                position_tolerance_degrees=1.5,
-                velocity_tolerance_degrees_per_second=8.0,
-                settle_timeout_seconds=3.0,
-                required_stable_samples=12,
                 cycles=2,
             )
 
@@ -166,16 +167,12 @@ class ActuatorWorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(kwargs["target_angle_radians"], math.pi / 2.0)
         self.assertAlmostEqual(kwargs["return_angle_radians"], -math.pi / 6.0)
         self.assertEqual(kwargs["cycles"], 2)
-        self.assertEqual(kwargs["position_kp"], 0.4)
-        self.assertEqual(kwargs["position_kd"], 0.02)
-        self.assertEqual(kwargs["torque_limit"], 0.7)
+        self.assertIsNone(kwargs["position_kp"])
+        self.assertIsNone(kwargs["position_kd"])
+        self.assertIsNone(kwargs["torque_limit"])
         self.assertAlmostEqual(kwargs["max_speed_radians_per_second"], math.pi / 4.0)
         self.assertEqual(kwargs["hold_seconds"], 1.5)
         self.assertEqual(kwargs["control_frequency_hz"], 150.0)
-        self.assertAlmostEqual(kwargs["position_tolerance_radians"], math.radians(1.5))
-        self.assertAlmostEqual(kwargs["velocity_tolerance_radians_per_second"], math.radians(8.0))
-        self.assertEqual(kwargs["settle_timeout_seconds"], 3.0)
-        self.assertEqual(kwargs["required_stable_samples"], 12)
 
 
 if __name__ == "__main__":

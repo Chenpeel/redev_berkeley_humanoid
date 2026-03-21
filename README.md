@@ -384,3 +384,60 @@ make test
 make lock
 make tree
 ```
+
+
+
+```bash
+单电机验证
+
+bash apps/lowlevel/start_can_transports.sh
+
+# 左腿
+uv run python apps/lowlevel/motor/ping.py --channel can0 --id 5   # hip_roll
+uv run python apps/lowlevel/motor/ping.py --channel can0 --id 3   # hip_yaw
+uv run python apps/lowlevel/motor/ping.py --channel can0 --id 1   # hip_pitch
+标定与运行前快速确认
+
+uv run python apps/lowlevel/calibrate_joints.py --left-leg-bus can1 --right-leg-bus can0
+uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can1 --right-leg-bus can0
+uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can1 --right-leg-bus can0
+
+native 运行时验证
+
+cmake --build build/lowlevel/native --target main -j
+
+./build/lowlevel/native/main \
+--left-leg-bus can1 \
+--right-leg-bus can0 \
+--protocol hiwonder \
+--device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+--baudrate 460800
+```
+
+
+
+```bash
+for id in 1 3 5 7 11 13; do
+    printf "can1 id %2d: " "$id"
+    uv run python apps/lowlevel/motor/ping.py --channel can1 --id "$id"
+done
+
+for id in 2 4 6 8 12 14; do
+    printf "can0 id %2d: " "$id"
+    uv run python apps/lowlevel/motor/ping.py --channel can0 --id "$id"
+done
+
+```
+
+```bash
+  uv run python apps/lowlevel/motor/move_angle.py \
+    --channel can0 \
+    --id 1 \
+    --target-deg 30 \
+    --hold-seconds 1.5 \
+    --position-tolerance-deg 1.5 \
+    --velocity-tolerance-deg 8 \
+    --settle-timeout-seconds 3 \
+    --stable-samples 12
+```
+

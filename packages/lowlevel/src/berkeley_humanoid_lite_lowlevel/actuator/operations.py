@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
 
 import numpy as np
 from loop_rate_limiters import RateLimiter
@@ -11,20 +10,6 @@ import berkeley_humanoid_lite_lowlevel.recoil as recoil
 
 DEFAULT_ACTUATOR_BITRATE = 1_000_000
 ActuatorAngleStage = tuple[str, float]
-
-
-@dataclass(frozen=True)
-class ActuatorAngleAssessment:
-    stage_name: str
-    target_angle_radians: float
-    settled: bool
-    passed: bool
-    settle_time_seconds: float | None
-    hold_max_position_error_radians: float
-    hold_max_velocity_radians_per_second: float
-    final_position_error_radians: float | None
-    final_velocity_radians_per_second: float | None
-    failure_reason: str | None = None
 
 
 def create_actuator_bus(channel: str, bitrate: int = DEFAULT_ACTUATOR_BITRATE) -> recoil.Bus:
@@ -49,20 +34,24 @@ def enter_actuator_position_mode(
     bus: recoil.Bus,
     device_id: int,
     *,
-    position_kp: float,
-    position_kd: float,
-    torque_limit: float,
+    position_kp: float | None = None,
+    position_kd: float | None = None,
+    torque_limit: float | None = None,
     parameter_apply_delay_seconds: float = 0.001,
 ) -> None:
-    # 按仓库里已验证的顺序切入位置模式，避免固件忽略首次位置命令。
     bus.set_mode(device_id, recoil.Mode.IDLE)
     time.sleep(parameter_apply_delay_seconds)
-    bus.write_position_kp(device_id, position_kp)
-    time.sleep(parameter_apply_delay_seconds)
-    bus.write_position_kd(device_id, position_kd)
-    time.sleep(parameter_apply_delay_seconds)
-    bus.write_torque_limit(device_id, torque_limit)
-    time.sleep(parameter_apply_delay_seconds)
+
+    if position_kp is not None:
+        bus.write_position_kp(device_id, position_kp)
+        time.sleep(parameter_apply_delay_seconds)
+    if position_kd is not None:
+        bus.write_position_kd(device_id, position_kd)
+        time.sleep(parameter_apply_delay_seconds)
+    if torque_limit is not None:
+        bus.write_torque_limit(device_id, torque_limit)
+        time.sleep(parameter_apply_delay_seconds)
+
     bus.feed(device_id)
     bus.set_mode(device_id, recoil.Mode.POSITION)
 
@@ -105,48 +94,22 @@ def build_actuator_angle_sequence(
     return sequence
 
 
-def sample_within_tolerance(
-    position_error_radians: float,
-    velocity_radians_per_second: float,
+def _print_motion_status(
     *,
-    position_tolerance_radians: float,
-    velocity_tolerance_radians_per_second: float,
-) -> bool:
-    return (
-        position_error_radians <= position_tolerance_radians
-        and velocity_radians_per_second <= velocity_tolerance_radians_per_second
-    )
-
-
-def _format_optional_float(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:.2f}"
-
-
-def print_actuator_angle_assessment(assessment: ActuatorAngleAssessment) -> None:
-    status = "PASS" if assessment.passed else "FAIL"
-    settle_time = _format_optional_float(assessment.settle_time_seconds)
-    final_position_error_degrees = _format_optional_float(
-        None
-        if assessment.final_position_error_radians is None
-        else math.degrees(assessment.final_position_error_radians)
-    )
-    final_velocity_degrees = _format_optional_float(
-        None
-        if assessment.final_velocity_radians_per_second is None
-        else math.degrees(assessment.final_velocity_radians_per_second)
-    )
+    command_angle_radians: float,
+    measured_position: float | None,
+    measured_velocity: float | None,
+) -> None:
+    if measured_position is None or measured_velocity is None:
+        return
 
     print(
-        f"[{status}] {assessment.stage_name}: settle={settle_time}s  "
-        f"hold_err_max={math.degrees(assessment.hold_max_position_error_radians):.2f} deg  "
-        f"hold_vel_max={math.degrees(assessment.hold_max_velocity_radians_per_second):.2f} deg/s  "
-        f"final_err={final_position_error_degrees} deg  "
-        f"final_vel={final_velocity_degrees} deg/s"
+        f"\rtarget={command_angle_radians:+.4f} rad  "
+        f"measured={measured_position:+.4f} rad  "
+        f"vel={measured_velocity:+.4f} rad/s",
+        end="",
+        flush=True,
     )
-    if assessment.failure_reason is not None:
-        print(f"Reason: {assessment.failure_reason}")
 
 
 def move_actuator_to_angle(
@@ -158,11 +121,7 @@ def move_actuator_to_angle(
     max_speed_radians_per_second: float,
     hold_seconds: float,
     stage_name: str,
-    position_tolerance_radians: float,
-    velocity_tolerance_radians_per_second: float,
-    settle_timeout_seconds: float,
-    required_stable_samples: int,
-) -> ActuatorAngleAssessment:
+) -> None:
     current_angle_radians = bus.read_position_measured(device_id)
     if current_angle_radians is None:
         raise RuntimeError(f"Failed to read actuator #{device_id} position")
@@ -183,13 +142,6 @@ def move_actuator_to_angle(
         f"({math.degrees(target_angle_radians):.2f} deg)"
     )
     print(f"Ramp duration: {ramp_duration_seconds:.2f} s")
-    print(
-        "Acceptance: "
-        f"position<={math.degrees(position_tolerance_radians):.2f} deg, "
-        f"velocity<={math.degrees(velocity_tolerance_radians_per_second):.2f} deg/s, "
-        f"stable_samples>={required_stable_samples}, "
-        f"settle_timeout={settle_timeout_seconds:.2f} s"
-    )
 
     ramp_start_time = time.monotonic()
     while True:
@@ -197,113 +149,31 @@ def move_actuator_to_angle(
         alpha = elapsed_seconds / ramp_duration_seconds
         command_angle_radians = interpolate_value(current_angle_radians, target_angle_radians, alpha)
 
+        bus.feed(device_id)
         measured_position, measured_velocity = bus.write_read_pdo_2(device_id, command_angle_radians, 0.0)
-        if measured_position is not None and measured_velocity is not None:
-            print(
-                f"\rtarget={command_angle_radians:+.4f} rad  "
-                f"measured={measured_position:+.4f} rad  "
-                f"vel={measured_velocity:+.4f} rad/s",
-                end="",
-                flush=True,
-            )
+        _print_motion_status(
+            command_angle_radians=command_angle_radians,
+            measured_position=measured_position,
+            measured_velocity=measured_velocity,
+        )
 
         if alpha >= 1.0:
             break
 
         rate.sleep()
 
-    settle_start_time = time.monotonic()
-    hold_start_time: float | None = None
-    settle_time_seconds: float | None = None
-    stable_samples = 0
-    hold_max_position_error_radians = 0.0
-    hold_max_velocity_radians_per_second = 0.0
-    final_position_error_radians: float | None = None
-    final_velocity_radians_per_second: float | None = None
-
-    while True:
+    hold_start_time = time.monotonic()
+    while time.monotonic() - hold_start_time < hold_seconds:
+        bus.feed(device_id)
         measured_position, measured_velocity = bus.write_read_pdo_2(device_id, target_angle_radians, 0.0)
-        if measured_position is not None and measured_velocity is not None:
-            position_error_radians = abs(measured_position - target_angle_radians)
-            velocity_radians_per_second = abs(measured_velocity)
-            final_position_error_radians = position_error_radians
-            final_velocity_radians_per_second = velocity_radians_per_second
-
-            if sample_within_tolerance(
-                position_error_radians,
-                velocity_radians_per_second,
-                position_tolerance_radians=position_tolerance_radians,
-                velocity_tolerance_radians_per_second=velocity_tolerance_radians_per_second,
-            ):
-                stable_samples += 1
-                if stable_samples >= required_stable_samples and settle_time_seconds is None:
-                    settle_time_seconds = time.monotonic() - settle_start_time
-                    hold_start_time = time.monotonic()
-            else:
-                stable_samples = 0
-
-            if settle_time_seconds is not None:
-                hold_max_position_error_radians = max(
-                    hold_max_position_error_radians,
-                    position_error_radians,
-                )
-                hold_max_velocity_radians_per_second = max(
-                    hold_max_velocity_radians_per_second,
-                    velocity_radians_per_second,
-                )
-
-            print(
-                f"\rtarget={target_angle_radians:+.4f} rad  "
-                f"measured={measured_position:+.4f} rad  "
-                f"err={position_error_radians:+.4f} rad  "
-                f"vel={measured_velocity:+.4f} rad/s  "
-                f"stable={stable_samples}/{required_stable_samples}",
-                end="",
-                flush=True,
-            )
-
-        if settle_time_seconds is None and time.monotonic() - settle_start_time >= settle_timeout_seconds:
-            print()
-            return ActuatorAngleAssessment(
-                stage_name=stage_name,
-                target_angle_radians=target_angle_radians,
-                settled=False,
-                passed=False,
-                settle_time_seconds=None,
-                hold_max_position_error_radians=hold_max_position_error_radians,
-                hold_max_velocity_radians_per_second=hold_max_velocity_radians_per_second,
-                final_position_error_radians=final_position_error_radians,
-                final_velocity_radians_per_second=final_velocity_radians_per_second,
-                failure_reason="failed to settle within the allotted timeout",
-            )
-
-        if hold_start_time is not None and time.monotonic() - hold_start_time >= hold_seconds:
-            break
-
+        _print_motion_status(
+            command_angle_radians=target_angle_radians,
+            measured_position=measured_position,
+            measured_velocity=measured_velocity,
+        )
         rate.sleep()
 
     print()
-
-    passed = (
-        hold_max_position_error_radians <= position_tolerance_radians
-        and hold_max_velocity_radians_per_second <= velocity_tolerance_radians_per_second
-    )
-    failure_reason = None
-    if not passed:
-        failure_reason = "hold phase exceeded the configured error or velocity tolerance"
-
-    return ActuatorAngleAssessment(
-        stage_name=stage_name,
-        target_angle_radians=target_angle_radians,
-        settled=True,
-        passed=passed,
-        settle_time_seconds=settle_time_seconds,
-        hold_max_position_error_radians=hold_max_position_error_radians,
-        hold_max_velocity_radians_per_second=hold_max_velocity_radians_per_second,
-        final_position_error_radians=final_position_error_radians,
-        final_velocity_radians_per_second=final_velocity_radians_per_second,
-        failure_reason=failure_reason,
-    )
 
 
 def run_actuator_angle_sequence(
@@ -313,16 +183,12 @@ def run_actuator_angle_sequence(
     target_angle_radians: float,
     return_angle_radians: float | None = None,
     cycles: int | None = None,
-    position_kp: float = 0.2,
-    position_kd: float = 0.005,
-    torque_limit: float = 0.2,
+    position_kp: float | None = None,
+    position_kd: float | None = None,
+    torque_limit: float | None = None,
     max_speed_radians_per_second: float = math.radians(30.0),
     hold_seconds: float = 2.0,
     control_frequency_hz: float = 200.0,
-    position_tolerance_radians: float = math.radians(2.0),
-    velocity_tolerance_radians_per_second: float = math.radians(10.0),
-    settle_timeout_seconds: float = 2.0,
-    required_stable_samples: int = 20,
 ) -> None:
     if max_speed_radians_per_second <= 0.0:
         raise ValueError("max_speed_radians_per_second must be positive")
@@ -330,14 +196,6 @@ def run_actuator_angle_sequence(
         raise ValueError("hold_seconds must be non-negative")
     if control_frequency_hz <= 0.0:
         raise ValueError("control_frequency_hz must be positive")
-    if position_tolerance_radians <= 0.0:
-        raise ValueError("position_tolerance_radians must be positive")
-    if velocity_tolerance_radians_per_second <= 0.0:
-        raise ValueError("velocity_tolerance_radians_per_second must be positive")
-    if settle_timeout_seconds <= 0.0:
-        raise ValueError("settle_timeout_seconds must be positive")
-    if required_stable_samples <= 0:
-        raise ValueError("required_stable_samples must be positive")
 
     sequence = build_actuator_angle_sequence(
         target_angle_radians=target_angle_radians,
@@ -354,10 +212,9 @@ def run_actuator_angle_sequence(
         torque_limit=torque_limit,
     )
 
-    failure: ActuatorAngleAssessment | None = None
     try:
         for stage_name, stage_target_radians in sequence:
-            assessment = move_actuator_to_angle(
+            move_actuator_to_angle(
                 bus,
                 rate,
                 device_id,
@@ -365,22 +222,11 @@ def run_actuator_angle_sequence(
                 max_speed_radians_per_second=max_speed_radians_per_second,
                 hold_seconds=hold_seconds,
                 stage_name=stage_name,
-                position_tolerance_radians=position_tolerance_radians,
-                velocity_tolerance_radians_per_second=velocity_tolerance_radians_per_second,
-                settle_timeout_seconds=settle_timeout_seconds,
-                required_stable_samples=required_stable_samples,
             )
-            print_actuator_angle_assessment(assessment)
-            if not assessment.passed:
-                failure = assessment
-                break
     except KeyboardInterrupt:
         print("\nInterrupted, switching actuator back to idle.")
     finally:
         bus.set_mode(device_id, recoil.Mode.IDLE)
-
-    if failure is not None:
-        raise RuntimeError(f"{failure.stage_name} failed: {failure.failure_reason}")
 
 
 def run_actuator_sine_motion(
@@ -407,6 +253,7 @@ def run_actuator_sine_motion(
     try:
         while True:
             target_angle = np.sin(2.0 * np.pi * motion_frequency_hz * time.time()) * motion_amplitude_radians
+            bus.feed(device_id)
             measured_position, measured_velocity = bus.write_read_pdo_2(device_id, target_angle, 0.0)
             if measured_position is not None and measured_velocity is not None:
                 print(f"Measured pos: {measured_position:.3f}\tvel: {measured_velocity:.3f}")

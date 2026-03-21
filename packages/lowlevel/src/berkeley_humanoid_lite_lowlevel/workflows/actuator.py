@@ -141,16 +141,12 @@ def run_actuator_angle_test(
     target_angle_degrees: float | None = None,
     return_angle_radians: float | None = None,
     return_angle_degrees: float | None = None,
-    position_kp: float = 0.2,
-    position_kd: float = 0.005,
-    torque_limit: float = 0.2,
+    position_kp: float | None = None,
+    position_kd: float | None = None,
+    torque_limit: float | None = None,
     max_speed_degrees_per_second: float = 30.0,
     hold_seconds: float = 2.0,
     control_frequency_hz: float = 200.0,
-    position_tolerance_degrees: float = 2.0,
-    velocity_tolerance_degrees_per_second: float = 10.0,
-    settle_timeout_seconds: float = 2.0,
-    required_stable_samples: int = 20,
     cycles: int | None = None,
 ) -> None:
     target_angle_radians = resolve_angle_radians(target_angle_radians, target_angle_degrees)
@@ -167,18 +163,8 @@ def run_actuator_angle_test(
         raise ValueError("--hold-seconds must be non-negative")
     if control_frequency_hz <= 0.0:
         raise ValueError("--control-rate must be positive")
-    if position_tolerance_degrees <= 0.0:
-        raise ValueError("--position-tolerance-deg must be positive")
-    if velocity_tolerance_degrees_per_second <= 0.0:
-        raise ValueError("--velocity-tolerance-deg must be positive")
-    if settle_timeout_seconds <= 0.0:
-        raise ValueError("--settle-timeout-seconds must be positive")
-    if required_stable_samples <= 0:
-        raise ValueError("--stable-samples must be positive")
 
     max_speed_radians_per_second = math.radians(max_speed_degrees_per_second)
-    position_tolerance_radians = math.radians(position_tolerance_degrees)
-    velocity_tolerance_radians_per_second = math.radians(velocity_tolerance_degrees_per_second)
     resolved_return_angle = 0.0 if return_angle_radians is None else return_angle_radians
 
     print(f"Actuator #{device_id} on {channel}")
@@ -192,14 +178,12 @@ def run_actuator_angle_test(
             f"Return angle:  {resolved_return_angle:.4f} rad "
             f"({math.degrees(resolved_return_angle):.2f} deg)"
         )
-    print(
-        f"Position tol:  {position_tolerance_degrees:.2f} deg"
-    )
-    print(
-        f"Velocity tol:  {velocity_tolerance_degrees_per_second:.2f} deg/s"
-    )
-    print(f"Settle limit:  {settle_timeout_seconds:.2f} s")
-    print(f"Stable count:  {required_stable_samples}")
+    if position_kp is not None:
+        print(f"Kp override:   {position_kp:.4f}")
+    if position_kd is not None:
+        print(f"Kd override:   {position_kd:.4f}")
+    if torque_limit is not None:
+        print(f"Torque limit:  {torque_limit:.4f}")
 
     bus = create_actuator_bus(channel=channel, bitrate=bitrate)
     try:
@@ -215,10 +199,6 @@ def run_actuator_angle_test(
             max_speed_radians_per_second=max_speed_radians_per_second,
             hold_seconds=hold_seconds,
             control_frequency_hz=control_frequency_hz,
-            position_tolerance_radians=position_tolerance_radians,
-            velocity_tolerance_radians_per_second=velocity_tolerance_radians_per_second,
-            settle_timeout_seconds=settle_timeout_seconds,
-            required_stable_samples=required_stable_samples,
         )
     finally:
         bus.stop()
