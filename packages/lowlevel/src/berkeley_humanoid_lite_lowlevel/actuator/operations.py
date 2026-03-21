@@ -45,6 +45,28 @@ def calibrate_actuator_electrical_offset(
     time.sleep(wait_seconds)
 
 
+def enter_actuator_position_mode(
+    bus: recoil.Bus,
+    device_id: int,
+    *,
+    position_kp: float,
+    position_kd: float,
+    torque_limit: float,
+    parameter_apply_delay_seconds: float = 0.001,
+) -> None:
+    # 按仓库里已验证的顺序切入位置模式，避免固件忽略首次位置命令。
+    bus.set_mode(device_id, recoil.Mode.IDLE)
+    time.sleep(parameter_apply_delay_seconds)
+    bus.write_position_kp(device_id, position_kp)
+    time.sleep(parameter_apply_delay_seconds)
+    bus.write_position_kd(device_id, position_kd)
+    time.sleep(parameter_apply_delay_seconds)
+    bus.write_torque_limit(device_id, torque_limit)
+    time.sleep(parameter_apply_delay_seconds)
+    bus.feed(device_id)
+    bus.set_mode(device_id, recoil.Mode.POSITION)
+
+
 def interpolate_value(start: float, end: float, alpha: float) -> float:
     clamped_alpha = min(max(alpha, 0.0), 1.0)
     return start * (1.0 - clamped_alpha) + end * clamped_alpha
@@ -324,11 +346,13 @@ def run_actuator_angle_sequence(
     )
     rate = RateLimiter(frequency=control_frequency_hz)
 
-    bus.write_position_kp(device_id, position_kp)
-    bus.write_position_kd(device_id, position_kd)
-    bus.write_torque_limit(device_id, torque_limit)
-    bus.set_mode(device_id, recoil.Mode.POSITION)
-    bus.feed(device_id)
+    enter_actuator_position_mode(
+        bus,
+        device_id,
+        position_kp=position_kp,
+        position_kd=position_kd,
+        torque_limit=torque_limit,
+    )
 
     failure: ActuatorAngleAssessment | None = None
     try:
@@ -372,11 +396,13 @@ def run_actuator_sine_motion(
 ) -> None:
     rate = RateLimiter(frequency=control_frequency_hz)
 
-    bus.write_position_kp(device_id, position_kp)
-    bus.write_position_kd(device_id, position_kd)
-    bus.write_torque_limit(device_id, torque_limit)
-    bus.set_mode(device_id, recoil.Mode.POSITION)
-    bus.feed(device_id)
+    enter_actuator_position_mode(
+        bus,
+        device_id,
+        position_kp=position_kp,
+        position_kd=position_kd,
+        torque_limit=torque_limit,
+    )
 
     try:
         while True:

@@ -4,7 +4,9 @@ import math
 import unittest
 from unittest.mock import patch
 
+import berkeley_humanoid_lite_lowlevel.recoil as recoil
 from berkeley_humanoid_lite_lowlevel import actuator
+from berkeley_humanoid_lite_lowlevel.actuator import operations as actuator_operations
 from berkeley_humanoid_lite_lowlevel.workflows import actuator as actuator_workflow
 
 
@@ -70,6 +72,47 @@ class ActuatorOperationTests(unittest.TestCase):
                 velocity_tolerance_radians_per_second=math.radians(5.0),
             )
         )
+
+    def test_enter_actuator_position_mode_matches_verified_initialization_order(self) -> None:
+        calls: list[tuple[object, ...]] = []
+
+        class FakeBus:
+            def set_mode(self, device_id: int, mode: recoil.Mode) -> None:
+                calls.append(("set_mode", device_id, mode))
+
+            def write_position_kp(self, device_id: int, value: float) -> None:
+                calls.append(("write_position_kp", device_id, value))
+
+            def write_position_kd(self, device_id: int, value: float) -> None:
+                calls.append(("write_position_kd", device_id, value))
+
+            def write_torque_limit(self, device_id: int, value: float) -> None:
+                calls.append(("write_torque_limit", device_id, value))
+
+            def feed(self, device_id: int) -> None:
+                calls.append(("feed", device_id))
+
+        with patch.object(actuator_operations.time, "sleep") as sleep:
+            actuator_operations.enter_actuator_position_mode(
+                FakeBus(),
+                7,
+                position_kp=0.4,
+                position_kd=0.02,
+                torque_limit=0.8,
+            )
+
+        self.assertEqual(
+            calls,
+            [
+                ("set_mode", 7, recoil.Mode.IDLE),
+                ("write_position_kp", 7, 0.4),
+                ("write_position_kd", 7, 0.02),
+                ("write_torque_limit", 7, 0.8),
+                ("feed", 7),
+                ("set_mode", 7, recoil.Mode.POSITION),
+            ],
+        )
+        self.assertEqual(sleep.call_count, 4)
 
 
 class ActuatorWorkflowTests(unittest.TestCase):
