@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import argparse
 import errno
 from collections.abc import Callable
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadInputError
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
+    DEFAULT_LEFT_LEG_BUS,
+    DEFAULT_RIGHT_LEG_BUS,
+)
 
 _LOWLEVEL_RUNTIME_SYNC_COMMAND = "uv sync --all-packages --group dev --group lowlevel-runtime"
 _MISSING_DEPENDENCY_HINTS = {
@@ -13,6 +18,21 @@ _MISSING_DEPENDENCY_HINTS = {
     "pkg_resources": ("setuptools<81", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
     "serial": ("pyserial", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
 }
+
+
+def add_leg_bus_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--left-leg-bus",
+        type=str,
+        default=DEFAULT_LEFT_LEG_BUS,
+        help="CAN bus name for the left leg",
+    )
+    parser.add_argument(
+        "--right-leg-bus",
+        type=str,
+        default=DEFAULT_RIGHT_LEG_BUS,
+        help="CAN bus name for the right leg",
+    )
 
 
 def run_with_friendly_lowlevel_errors(callback: Callable[[], None]) -> None:
@@ -36,7 +56,8 @@ def run_with_friendly_lowlevel_errors(callback: Callable[[], None]) -> None:
 
         raise SystemExit(
             "未找到可用的 CAN 设备。"
-            "请先执行 `bash apps/lowlevel/start_can_transports.sh` 拉起 can0/can1，"
+            "请先执行 `bash apps/lowlevel/start_can_transports.sh` 拉起对应的 can 接口"
+            "（例如 can0-can3），"
             "然后再重试。"
         ) from error
 

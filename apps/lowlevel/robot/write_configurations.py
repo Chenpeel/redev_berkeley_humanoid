@@ -2,7 +2,7 @@
 
 import argparse
 
-from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_lowlevel_errors
+from berkeley_humanoid_lite_lowlevel.cli import add_leg_bus_arguments, run_with_friendly_lowlevel_errors
 from berkeley_humanoid_lite_lowlevel.runtime_paths import get_hardware_config_path
 
 
@@ -21,11 +21,14 @@ def main() -> None:
         action="store_true",
         help="Skip persisting parameters to actuator flash",
     )
+    add_leg_bus_arguments(parser)
     arguments = parser.parse_args()
 
     apply_robot_configuration(
         arguments.config,
         store_to_flash=not arguments.no_store_to_flash,
+        left_leg_bus=arguments.left_leg_bus,
+        right_leg_bus=arguments.right_leg_bus,
     )
 
 
