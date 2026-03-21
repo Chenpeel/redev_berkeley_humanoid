@@ -223,7 +223,9 @@ make lowlevel-run-imu-test IMU_TEST_ARGS="\
 
 > C++ / native 主程序
 >
-> 运行前先确保 `can0` / `can1` 已经拉起。
+> 运行前先确保实际使用的 CAN 接口已经拉起。
+> 默认下肢映射是 `can0` / `can1`。
+> 如果按官方下肢接线使用 `can2` / `can3`，请显式传入总线参数。
 > 如果只想查看快捷命令，先执行 `make help`。
 
 ```bash
@@ -240,6 +242,17 @@ make lowlevel-run LOWLEVEL_ARGS="\
   --baudrate 460800"
 ```
 
+> 使用官方下肢接线时，显式指定 native 下肢总线
+
+```bash
+make lowlevel-run LOWLEVEL_ARGS="\
+  --left-leg-bus can2 \
+  --right-leg-bus can3 \
+  --protocol hiwonder \
+  --device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
+  --baudrate 460800"
+```
+
 > Python 标定与运行脚本
 >
 > 下面这些命令是 Python 入口，不是 `make lowlevel-*` 的封装。
@@ -248,6 +261,15 @@ make lowlevel-run LOWLEVEL_ARGS="\
 uv run python apps/lowlevel/calibrate_joints.py
 uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml
 uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml
+```
+
+> 使用官方下肢接线时，给 Python 入口显式指定下肢总线
+
+```bash
+uv run python apps/lowlevel/check_connection.py --left-leg-bus can2 --right-leg-bus can3
+uv run python apps/lowlevel/calibrate_joints.py --left-leg-bus can2 --right-leg-bus can3
+uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can2 --right-leg-bus can3
+uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can2 --right-leg-bus can3
 ```
 
 
