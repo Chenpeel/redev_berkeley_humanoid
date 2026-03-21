@@ -3,6 +3,7 @@
 #pragma once
 
 
+#include <string>
 #include <stdio.h>
 #include <yaml-cpp/yaml.h>
 
@@ -18,6 +19,9 @@
 
 #define N_LOWLEVEL_STATES       (4+3+12+12+1+3)
 #define N_LOWLEVEL_COMMANDS     12
+
+constexpr const char *DEFAULT_LEFT_LEG_BUS = "can0";
+constexpr const char *DEFAULT_RIGHT_LEG_BUS = "can1";
 
 
 
@@ -125,7 +129,10 @@ class RealHumanoid {
        1, 1
     };
 
-    explicit RealHumanoid(const IMUConfiguration &imu_configuration);
+    RealHumanoid(
+        const IMUConfiguration &imu_configuration,
+        std::string left_leg_bus_name = DEFAULT_LEFT_LEG_BUS,
+        std::string right_leg_bus_name = DEFAULT_RIGHT_LEG_BUS);
     ~RealHumanoid();
 
     /**
@@ -163,6 +170,8 @@ class RealHumanoid {
 
     /* devices */
     IMUConfiguration imu_configuration_;
+    std::string left_leg_bus_name_;
+    std::string right_leg_bus_name_;
     IMU *imu;
     SocketCan left_arm_bus;
     SocketCan right_arm_bus;

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <sys/ioctl.h>
+#include <utility>
 
 #include "real_humanoid.h"
 #include "motor_controller_conf.h"
@@ -69,7 +70,13 @@ static float linear_interpolate(float start, float end, float percentage) {
 }
 
 
-RealHumanoid::RealHumanoid(const IMUConfiguration &imu_configuration) : imu_configuration_(imu_configuration) {
+RealHumanoid::RealHumanoid(
+    const IMUConfiguration &imu_configuration,
+    std::string left_leg_bus_name,
+    std::string right_leg_bus_name)
+    : imu_configuration_(imu_configuration),
+      left_leg_bus_name_(std::move(left_leg_bus_name)),
+      right_leg_bus_name_(std::move(right_leg_bus_name)) {
   imu = nullptr;
   state = STATE_IDLE;
   next_state = STATE_IDLE;
@@ -458,16 +465,20 @@ void RealHumanoid::initialize() {
     // }
 
     // left leg
-    left_leg_bus.open("can0");
+    left_leg_bus.open(left_leg_bus_name_);
     if (!left_leg_bus.isOpen()) {
-      printf("[ERROR] <Main>: Error initializing left leg transport\n");
+      printf(
+          "[ERROR] <Main>: Error initializing left leg transport on %s\n",
+          left_leg_bus_name_.c_str());
       exit(1);
     }
 
     // right leg
-    right_leg_bus.open("can1");
+    right_leg_bus.open(right_leg_bus_name_);
     if (!right_leg_bus.isOpen()) {
-      printf("[ERROR] <Main>: Error initializing right arm transport\n");
+      printf(
+          "[ERROR] <Main>: Error initializing right leg transport on %s\n",
+          right_leg_bus_name_.c_str());
       exit(1);
     }
   #endif
