@@ -1,10 +1,21 @@
 # Copyright (c) 2025, -T.K.-.
 
+import importlib
+import logging
 import math
 import struct
 import time
+import warnings
 
-import can
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="pkg_resources is deprecated as an API.*",
+        category=UserWarning,
+    )
+    can = importlib.import_module("can")
+
+logging.getLogger("can.bus").setLevel(logging.ERROR)
 
 
 class Function:
@@ -200,6 +211,7 @@ class Bus:
         """
         self.channel = channel
         self.bitrate = bitrate
+        self.__bus = None
 
         self.__bus = can.interface.Bus(interface="socketcan", channel=self.channel, bitrate=self.bitrate)
 
@@ -207,7 +219,8 @@ class Bus:
         self.stop()
 
     def stop(self):
-        self.__bus.shutdown()
+        if self.__bus is not None:
+            self.__bus.shutdown()
 
     """
     Receive data.
@@ -256,7 +269,7 @@ class Bus:
             return frame
 
     def transmit(self, frame: CANFrame):
-        assert frame.device_id <= CANFrame.DEVICE_ID_MSK, "device_id: {0} out of range".format(frame.device_id)
+        assert frame.device_id <= CANFrame.DEVICE_ID_MSK, f"device_id: {frame.device_id} out of range"
         assert frame.func_id is not None
 
         can_id = (frame.func_id << CANFrame.FUNC_ID_POS) | frame.device_id
@@ -547,7 +560,13 @@ class Bus:
         return self._write_parameter_f32(device_id, Parameter.ENCODER_FLUX_OFFSET, value)
 
     # Quick helper functions
-    def set_current_bandwidth(self, device_id: int, bandwidth_hz: float, phase_resistance: float, phase_inductance: float):
+    def set_current_bandwidth(
+        self,
+        device_id: int,
+        bandwidth_hz: float,
+        phase_resistance: float,
+        phase_inductance: float,
+    ):
         kp = bandwidth_hz * 2.0 * math.pi * phase_inductance
         ki = phase_resistance / phase_inductance
         print(f"Calculated current kp: {kp:.4f}, ki: {ki:.4f}")

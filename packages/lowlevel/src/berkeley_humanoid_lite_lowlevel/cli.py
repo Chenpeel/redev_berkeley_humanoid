@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 from collections.abc import Callable
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadInputError
@@ -28,6 +29,15 @@ def run_with_friendly_lowlevel_errors(callback: Callable[[], None]) -> None:
         raise SystemExit(
             f"缺少 lowlevel 运行时依赖 `{package_name}`。"
             f"请先执行 `{install_command}`，然后再重试。"
+        ) from error
+    except OSError as error:
+        if error.errno != errno.ENODEV:
+            raise
+
+        raise SystemExit(
+            "未找到可用的 CAN 设备。"
+            "请先执行 `bash apps/lowlevel/start_can_transports.sh` 拉起 can0/can1，"
+            "然后再重试。"
         ) from error
 
 

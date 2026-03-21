@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
@@ -157,6 +158,16 @@ class GamepadInputTests(unittest.TestCase):
 
         self.assertIn("setuptools<81", str(raised.exception))
         self.assertIn("uv sync --all-packages --group dev --group lowlevel-runtime", str(raised.exception))
+
+    def test_cli_wrapper_converts_missing_can_device_to_friendly_exit(self) -> None:
+        def raise_missing_can_device() -> None:
+            raise OSError(errno.ENODEV, "No such device")
+
+        with self.assertRaises(SystemExit) as raised:
+            run_with_friendly_gamepad_errors(raise_missing_can_device)
+
+        self.assertIn("start_can_transports.sh", str(raised.exception))
+        self.assertIn("CAN", str(raised.exception))
 
     def test_broadcast_gamepad_commands_skips_udp_setup_when_start_fails(self) -> None:
         with (
