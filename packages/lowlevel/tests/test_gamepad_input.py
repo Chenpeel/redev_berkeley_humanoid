@@ -134,6 +134,30 @@ class GamepadInputTests(unittest.TestCase):
 
         self.assertEqual(str(raised.exception), "未检测到可用手柄。")
 
+    def test_cli_wrapper_converts_missing_runtime_dependency_to_friendly_exit(self) -> None:
+        def raise_missing_can_dependency() -> None:
+            error = ModuleNotFoundError("No module named 'can'")
+            error.name = "can"
+            raise error
+
+        with self.assertRaises(SystemExit) as raised:
+            run_with_friendly_gamepad_errors(raise_missing_can_dependency)
+
+        self.assertIn("python-can", str(raised.exception))
+        self.assertIn("uv sync --all-packages --group dev --group lowlevel-runtime", str(raised.exception))
+
+    def test_cli_wrapper_converts_missing_setuptools_dependency_to_friendly_exit(self) -> None:
+        def raise_missing_pkg_resources_dependency() -> None:
+            error = ModuleNotFoundError("No module named 'pkg_resources'")
+            error.name = "pkg_resources"
+            raise error
+
+        with self.assertRaises(SystemExit) as raised:
+            run_with_friendly_gamepad_errors(raise_missing_pkg_resources_dependency)
+
+        self.assertIn("setuptools", str(raised.exception))
+        self.assertIn("uv sync --all-packages --group dev --group lowlevel-runtime", str(raised.exception))
+
     def test_broadcast_gamepad_commands_skips_udp_setup_when_start_fails(self) -> None:
         with (
             patch.object(locomotion_workflow, "create_gamepad_command_stream") as create_gamepad_command_stream,
