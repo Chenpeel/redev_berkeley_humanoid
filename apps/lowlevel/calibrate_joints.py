@@ -7,10 +7,11 @@ Run this script after each power cycle to calibrate the encoder offset of each j
 """
 
 from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
-from berkeley_humanoid_lite_lowlevel.workflows import run_joint_calibration
 
 
 def main() -> None:
+    from berkeley_humanoid_lite_lowlevel.workflows import run_joint_calibration
+
     run_joint_calibration()
 
 

@@ -1,15 +1,16 @@
 import argparse
 
 from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
-from berkeley_humanoid_lite_lowlevel.workflows import broadcast_gamepad_commands
-from berkeley_humanoid_lite_lowlevel.workflows.locomotion import (
-    DEFAULT_GAMEPAD_UDP_HOST,
-    DEFAULT_GAMEPAD_UDP_PORT,
-    DEFAULT_GAMEPAD_UDP_RATE_HZ,
-)
 
 
 def main() -> None:
+    from berkeley_humanoid_lite_lowlevel.workflows import broadcast_gamepad_commands
+    from berkeley_humanoid_lite_lowlevel.workflows.locomotion import (
+        DEFAULT_GAMEPAD_UDP_HOST,
+        DEFAULT_GAMEPAD_UDP_PORT,
+        DEFAULT_GAMEPAD_UDP_RATE_HZ,
+    )
+
     parser = argparse.ArgumentParser(description="Broadcast gamepad commands to the native runtime over UDP.")
     parser.add_argument(
         "--host",

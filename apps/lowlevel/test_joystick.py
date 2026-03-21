@@ -7,10 +7,11 @@ Stream the latest locomotion command decoded from the gamepad.
 """
 
 from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_gamepad_errors
-from berkeley_humanoid_lite_lowlevel.workflows import stream_gamepad_commands
 
 
 def main() -> None:
+    from berkeley_humanoid_lite_lowlevel.workflows import stream_gamepad_commands
+
     stream_gamepad_commands()
 
 
