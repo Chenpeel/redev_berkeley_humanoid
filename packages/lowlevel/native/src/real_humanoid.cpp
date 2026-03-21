@@ -498,17 +498,17 @@ void RealHumanoid::initialize() {
   // joint_ptrs[ARM_RIGHT_ELBOW_ROLL_JOINT] = std::make_shared<MotorController>(&right_arm_bus, 10);
 
   // left leg
-  joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 1);
+  joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 5);
   joint_ptrs[LEG_LEFT_HIP_YAW_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 3);
-  joint_ptrs[LEG_LEFT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 5);
+  joint_ptrs[LEG_LEFT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 1);
   joint_ptrs[LEG_LEFT_KNEE_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 7);
   joint_ptrs[LEG_LEFT_ANKLE_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 11);
   joint_ptrs[LEG_LEFT_ANKLE_ROLL_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 13);
 
   // right leg
-  joint_ptrs[LEG_RIGHT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 2);
+  joint_ptrs[LEG_RIGHT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 6);
   joint_ptrs[LEG_RIGHT_HIP_YAW_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 4);
-  joint_ptrs[LEG_RIGHT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 6);
+  joint_ptrs[LEG_RIGHT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 2);
   joint_ptrs[LEG_RIGHT_KNEE_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 8);
   joint_ptrs[LEG_RIGHT_ANKLE_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 12);
   joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 14);

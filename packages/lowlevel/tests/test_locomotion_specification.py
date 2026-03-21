@@ -31,8 +31,10 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
 
         self.assertTrue(all(address.bus_name == "can2" for address in specification.joint_addresses[:6]))
         self.assertTrue(all(address.bus_name == "can3" for address in specification.joint_addresses[6:]))
-        self.assertEqual(specification.joint_addresses[0].device_id, 1)
-        self.assertEqual(specification.joint_addresses[6].device_id, 2)
+        self.assertEqual(specification.joint_addresses[0].device_id, 5)
+        self.assertEqual(specification.joint_addresses[2].device_id, 1)
+        self.assertEqual(specification.joint_addresses[6].device_id, 6)
+        self.assertEqual(specification.joint_addresses[8].device_id, 2)
 
     def test_build_command_from_states_maps_mode_and_axes(self) -> None:
         states = {

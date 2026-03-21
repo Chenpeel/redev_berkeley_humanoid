@@ -59,15 +59,15 @@ def build_leg_locomotion_robot_specification(
 ) -> LocomotionRobotSpecification:
     return LocomotionRobotSpecification(
         joint_addresses=(
-            JointTransportAddress(left_leg_bus, 1, "left_hip_roll_joint"),
+            JointTransportAddress(left_leg_bus, 5, "left_hip_roll_joint"),
             JointTransportAddress(left_leg_bus, 3, "left_hip_yaw_joint"),
-            JointTransportAddress(left_leg_bus, 5, "left_hip_pitch_joint"),
+            JointTransportAddress(left_leg_bus, 1, "left_hip_pitch_joint"),
             JointTransportAddress(left_leg_bus, 7, "left_knee_pitch_joint"),
             JointTransportAddress(left_leg_bus, 11, "left_ankle_pitch_joint"),
             JointTransportAddress(left_leg_bus, 13, "left_ankle_roll_joint"),
-            JointTransportAddress(right_leg_bus, 2, "right_hip_roll_joint"),
+            JointTransportAddress(right_leg_bus, 6, "right_hip_roll_joint"),
             JointTransportAddress(right_leg_bus, 4, "right_hip_yaw_joint"),
-            JointTransportAddress(right_leg_bus, 6, "right_hip_pitch_joint"),
+            JointTransportAddress(right_leg_bus, 2, "right_hip_pitch_joint"),
             JointTransportAddress(right_leg_bus, 8, "right_knee_pitch_joint"),
             JointTransportAddress(right_leg_bus, 12, "right_ankle_pitch_joint"),
             JointTransportAddress(right_leg_bus, 14, "right_ankle_roll_joint"),
