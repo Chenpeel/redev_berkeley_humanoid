@@ -7,6 +7,7 @@ from berkeley_humanoid_lite_lowlevel.robot.command_source import build_command_f
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
     build_default_locomotion_robot_specification,
+    build_leg_locomotion_robot_specification,
 )
 
 
@@ -21,6 +22,17 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
         self.assertEqual(specification.calibration_reference_positions.shape, (12,))
         self.assertEqual(len(specification.calibration_limit_selectors), 12)
         self.assertEqual(specification.joint_names[0], "left_hip_roll_joint")
+
+    def test_leg_specification_supports_custom_bus_names(self) -> None:
+        specification = build_leg_locomotion_robot_specification(
+            left_leg_bus="can2",
+            right_leg_bus="can3",
+        )
+
+        self.assertTrue(all(address.bus_name == "can2" for address in specification.joint_addresses[:6]))
+        self.assertTrue(all(address.bus_name == "can3" for address in specification.joint_addresses[6:]))
+        self.assertEqual(specification.joint_addresses[0].device_id, 1)
+        self.assertEqual(specification.joint_addresses[6].device_id, 2)
 
     def test_build_command_from_states_maps_mode_and_axes(self) -> None:
         states = {

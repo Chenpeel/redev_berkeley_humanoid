@@ -5,8 +5,9 @@ from typing import Literal
 
 import numpy as np
 
-
 DEFAULT_IMU_BAUDRATE = 0x08
+DEFAULT_LEFT_LEG_BUS = "can0"
+DEFAULT_RIGHT_LEG_BUS = "can1"
 CalibrationLimitSelector = Literal["min", "max"]
 
 
@@ -51,21 +52,25 @@ class LocomotionRobotSpecification:
         return tuple(address.joint_name for address in self.joint_addresses)
 
 
-def build_default_locomotion_robot_specification() -> LocomotionRobotSpecification:
+def build_leg_locomotion_robot_specification(
+    *,
+    left_leg_bus: str = DEFAULT_LEFT_LEG_BUS,
+    right_leg_bus: str = DEFAULT_RIGHT_LEG_BUS,
+) -> LocomotionRobotSpecification:
     return LocomotionRobotSpecification(
         joint_addresses=(
-            JointTransportAddress("can0", 1, "left_hip_roll_joint"),
-            JointTransportAddress("can0", 3, "left_hip_yaw_joint"),
-            JointTransportAddress("can0", 5, "left_hip_pitch_joint"),
-            JointTransportAddress("can0", 7, "left_knee_pitch_joint"),
-            JointTransportAddress("can0", 11, "left_ankle_pitch_joint"),
-            JointTransportAddress("can0", 13, "left_ankle_roll_joint"),
-            JointTransportAddress("can1", 2, "right_hip_roll_joint"),
-            JointTransportAddress("can1", 4, "right_hip_yaw_joint"),
-            JointTransportAddress("can1", 6, "right_hip_pitch_joint"),
-            JointTransportAddress("can1", 8, "right_knee_pitch_joint"),
-            JointTransportAddress("can1", 12, "right_ankle_pitch_joint"),
-            JointTransportAddress("can1", 14, "right_ankle_roll_joint"),
+            JointTransportAddress(left_leg_bus, 1, "left_hip_roll_joint"),
+            JointTransportAddress(left_leg_bus, 3, "left_hip_yaw_joint"),
+            JointTransportAddress(left_leg_bus, 5, "left_hip_pitch_joint"),
+            JointTransportAddress(left_leg_bus, 7, "left_knee_pitch_joint"),
+            JointTransportAddress(left_leg_bus, 11, "left_ankle_pitch_joint"),
+            JointTransportAddress(left_leg_bus, 13, "left_ankle_roll_joint"),
+            JointTransportAddress(right_leg_bus, 2, "right_hip_roll_joint"),
+            JointTransportAddress(right_leg_bus, 4, "right_hip_yaw_joint"),
+            JointTransportAddress(right_leg_bus, 6, "right_hip_pitch_joint"),
+            JointTransportAddress(right_leg_bus, 8, "right_knee_pitch_joint"),
+            JointTransportAddress(right_leg_bus, 12, "right_ankle_pitch_joint"),
+            JointTransportAddress(right_leg_bus, 14, "right_ankle_roll_joint"),
         ),
         mirrored_joint_pairs=((0, 6), (1, 7), (2, 8), (3, 9), (4, 10), (5, 11)),
         joint_axis_directions=np.array(
@@ -121,3 +126,7 @@ def build_default_locomotion_robot_specification() -> LocomotionRobotSpecificati
             "max",
         ),
     )
+
+
+def build_default_locomotion_robot_specification() -> LocomotionRobotSpecification:
+    return build_leg_locomotion_robot_specification()

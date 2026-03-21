@@ -3,8 +3,10 @@ from __future__ import annotations
 import contextlib
 import io
 import struct
+import sys
 import unittest
 from types import ModuleType, SimpleNamespace
+from unittest import mock
 
 import numpy as np
 from berkeley_humanoid_lite_lowlevel.robot.command_source import LocomotionCommand
@@ -56,7 +58,7 @@ class LocomotionWorkflowTests(unittest.TestCase):
         )
 
         with contextlib.redirect_stdout(io.StringIO()) as stdout:
-            with unittest.mock.patch.dict(
+            with mock.patch.dict(
                 "sys.modules",
                 {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
             ):
@@ -72,6 +74,49 @@ class LocomotionWorkflowTests(unittest.TestCase):
         np.testing.assert_allclose(
             FakePolicyController.last_observations[12:15],
             np.array([0.4, -0.2, 0.1], dtype=np.float32),
+        )
+
+    def test_create_locomotion_robot_supports_custom_leg_buses(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeRobot:
+            def __init__(self, specification=None, **_: object) -> None:
+                captured["specification"] = specification
+
+            def check_connection(self) -> None:
+                captured["checked"] = True
+
+            def shutdown(self) -> None:
+                captured["shutdown"] = True
+
+        fake_robot_module = ModuleType("berkeley_humanoid_lite_lowlevel.robot")
+        fake_robot_module.LocomotionRobot = FakeRobot
+
+        with mock.patch.dict(sys.modules, {"berkeley_humanoid_lite_lowlevel.robot": fake_robot_module}):
+            robot = locomotion_workflow.create_locomotion_robot(left_leg_bus="can2", right_leg_bus="can3")
+
+        specification = captured["specification"]
+        self.assertIsNotNone(robot)
+        self.assertIsNotNone(specification)
+        self.assertTrue(all(address.bus_name == "can2" for address in specification.joint_addresses[:6]))
+        self.assertTrue(all(address.bus_name == "can3" for address in specification.joint_addresses[6:]))
+
+    def test_check_locomotion_connection_supports_custom_leg_buses(self) -> None:
+        class FakeRobot:
+            def check_connection(self) -> None:
+                return None
+
+            def shutdown(self) -> None:
+                return None
+
+        with mock.patch.object(locomotion_workflow, "create_locomotion_robot", return_value=FakeRobot()) as factory:
+            locomotion_workflow.check_locomotion_connection(left_leg_bus="can2", right_leg_bus="can3")
+
+        factory.assert_called_once_with(
+            left_leg_bus="can2",
+            right_leg_bus="can3",
+            enable_imu=False,
+            enable_command_source=False,
         )
 
 

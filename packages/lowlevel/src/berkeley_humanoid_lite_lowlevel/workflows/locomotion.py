@@ -11,6 +11,7 @@ from cc.udp import UDP
 from loop_rate_limiters import RateLimiter
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource, LocomotionCommand
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import build_leg_locomotion_robot_specification
 
 if TYPE_CHECKING:
     from berkeley_humanoid_lite_lowlevel.policy.configuration import PolicyDeploymentConfiguration
@@ -46,9 +47,33 @@ def encode_gamepad_command_packet(command: LocomotionCommand) -> bytes:
     )
 
 
-def run_locomotion_loop(configuration: PolicyDeploymentConfiguration) -> None:
-    from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
+def create_locomotion_robot(
+    *,
+    left_leg_bus: str = "can0",
+    right_leg_bus: str = "can1",
+    enable_imu: bool = True,
+    enable_command_source: bool = True,
+):
     from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
+
+    specification = build_leg_locomotion_robot_specification(
+        left_leg_bus=left_leg_bus,
+        right_leg_bus=right_leg_bus,
+    )
+    return LocomotionRobot(
+        specification=specification,
+        enable_imu=enable_imu,
+        enable_command_source=enable_command_source,
+    )
+
+
+def run_locomotion_loop(
+    configuration: PolicyDeploymentConfiguration,
+    *,
+    left_leg_bus: str = "can0",
+    right_leg_bus: str = "can1",
+) -> None:
+    from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
 
@@ -59,7 +84,10 @@ def run_locomotion_loop(configuration: PolicyDeploymentConfiguration) -> None:
     robot = None
     observation_stream = None
     try:
-        robot = LocomotionRobot()
+        robot = create_locomotion_robot(
+            left_leg_bus=left_leg_bus,
+            right_leg_bus=right_leg_bus,
+        )
         observation_stream = create_observation_stream(configuration)
         robot.enter_damping_mode()
         observations = robot.reset()
@@ -78,13 +106,19 @@ def run_locomotion_loop(configuration: PolicyDeploymentConfiguration) -> None:
             robot.stop()
 
 
-def run_idle_stream(configuration: PolicyDeploymentConfiguration) -> None:
-    from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
-
+def run_idle_stream(
+    configuration: PolicyDeploymentConfiguration,
+    *,
+    left_leg_bus: str = "can0",
+    right_leg_bus: str = "can1",
+) -> None:
     robot = None
     observation_stream = None
     try:
-        robot = LocomotionRobot()
+        robot = create_locomotion_robot(
+            left_leg_bus=left_leg_bus,
+            right_leg_bus=right_leg_bus,
+        )
         observation_stream = create_observation_stream(configuration)
         robot.enter_damping_mode()
         robot.reset()
@@ -103,10 +137,17 @@ def run_idle_stream(configuration: PolicyDeploymentConfiguration) -> None:
             robot.stop()
 
 
-def check_locomotion_connection() -> None:
-    from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
-
-    robot = LocomotionRobot(enable_imu=False, enable_command_source=False)
+def check_locomotion_connection(
+    *,
+    left_leg_bus: str = "can0",
+    right_leg_bus: str = "can1",
+) -> None:
+    robot = create_locomotion_robot(
+        left_leg_bus=left_leg_bus,
+        right_leg_bus=right_leg_bus,
+        enable_imu=False,
+        enable_command_source=False,
+    )
     try:
         robot.check_connection()
     finally:

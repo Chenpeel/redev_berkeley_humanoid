@@ -3,7 +3,6 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-
 __all__ = [
     "Bimanual",
     "CalibrationStore",
@@ -17,6 +16,7 @@ __all__ = [
     "XInputCode",
     "build_command_from_states",
     "build_default_locomotion_robot_specification",
+    "build_leg_locomotion_robot_specification",
     "capture_calibration_offsets",
     "compute_position_offsets",
     "normalized_gripper_target_to_raw_value",
@@ -50,9 +50,15 @@ _MODULE_EXPORTS = {
         "normalized_gripper_target_to_raw_value",
     ),
     "SerialGripper": ("berkeley_humanoid_lite_lowlevel.robot.gripper", "SerialGripper"),
-    "read_robot_configuration": ("berkeley_humanoid_lite_lowlevel.robot.configuration_io", "read_robot_configuration"),
+    "read_robot_configuration": (
+        "berkeley_humanoid_lite_lowlevel.robot.configuration_io",
+        "read_robot_configuration",
+    ),
     "update_limit_readings": ("berkeley_humanoid_lite_lowlevel.robot.calibration", "update_limit_readings"),
-    "write_robot_configuration": ("berkeley_humanoid_lite_lowlevel.robot.configuration_io", "write_robot_configuration"),
+    "write_robot_configuration": (
+        "berkeley_humanoid_lite_lowlevel.robot.configuration_io",
+        "write_robot_configuration",
+    ),
     "LocomotionRobot": ("berkeley_humanoid_lite_lowlevel.robot.locomotion_runtime", "LocomotionRobot"),
     "JointTransportAddress": (
         "berkeley_humanoid_lite_lowlevel.robot.locomotion_specification",
@@ -65,6 +71,10 @@ _MODULE_EXPORTS = {
     "build_default_locomotion_robot_specification": (
         "berkeley_humanoid_lite_lowlevel.robot.locomotion_specification",
         "build_default_locomotion_robot_specification",
+    ),
+    "build_leg_locomotion_robot_specification": (
+        "berkeley_humanoid_lite_lowlevel.robot.locomotion_specification",
+        "build_leg_locomotion_robot_specification",
     ),
 }
 
