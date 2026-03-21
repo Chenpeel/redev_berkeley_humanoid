@@ -26,6 +26,19 @@ class WorkflowImportTests(unittest.TestCase):
         self.assertIn(f"{module_prefix}.imu", sys.modules)
         self.assertNotIn(f"{module_prefix}.actuator", sys.modules)
 
+    def test_actuator_angle_test_is_exposed_via_lazy_exports(self) -> None:
+        module_prefix = "berkeley_humanoid_lite_lowlevel.workflows"
+        self._clear_modules(module_prefix)
+
+        workflows = importlib.import_module(module_prefix)
+
+        self.assertNotIn(f"{module_prefix}.actuator", sys.modules)
+
+        run_actuator_angle_test = workflows.run_actuator_angle_test
+
+        self.assertTrue(callable(run_actuator_angle_test))
+        self.assertIn(f"{module_prefix}.actuator", sys.modules)
+
     def test_gamepad_workflows_do_not_import_locomotion_runtime(self) -> None:
         workflow_prefix = "berkeley_humanoid_lite_lowlevel.workflows"
         robot_prefix = "berkeley_humanoid_lite_lowlevel.robot"

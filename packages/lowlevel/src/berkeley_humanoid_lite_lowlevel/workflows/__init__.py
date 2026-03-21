@@ -5,6 +5,7 @@ from typing import Any
 
 __all__ = [
     "check_actuator_connection",
+    "run_actuator_angle_test",
     "configure_actuator",
     "export_actuator_configuration",
     "run_actuator_calibration",
@@ -32,6 +33,10 @@ _MODULE_EXPORTS = {
     "check_actuator_connection": (
         "berkeley_humanoid_lite_lowlevel.workflows.actuator",
         "check_actuator_connection",
+    ),
+    "run_actuator_angle_test": (
+        "berkeley_humanoid_lite_lowlevel.workflows.actuator",
+        "run_actuator_angle_test",
     ),
     "configure_actuator": (
         "berkeley_humanoid_lite_lowlevel.workflows.actuator",
