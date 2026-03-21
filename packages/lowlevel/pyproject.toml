@@ -19,7 +19,9 @@ runtime = [
     "loop_rate_limiters",
     "onnxruntime",
     "psutil",
+    "python-can",
     "pyserial",
+    "setuptools",
     "torch==2.7.0",
 ]
 teleoperation = [

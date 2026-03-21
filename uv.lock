@@ -356,6 +356,8 @@ runtime = [
     { name = "onnxruntime", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "psutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pyserial", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "python-can", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 teleoperation = [
@@ -380,7 +382,9 @@ requires-dist = [
     { name = "pin-pink", marker = "extra == 'teleoperation'" },
     { name = "psutil", marker = "extra == 'runtime'" },
     { name = "pyserial", marker = "extra == 'runtime'" },
+    { name = "python-can", marker = "extra == 'runtime'" },
     { name = "qpsolvers", extras = ["quadprog"], marker = "extra == 'teleoperation'" },
+    { name = "setuptools", marker = "extra == 'runtime'" },
     { name = "torch", marker = "extra == 'runtime'", specifier = "==2.7.0", index = "https://download.pytorch.org/whl/cu128" },
 ]
 provides-extras = ["runtime", "teleoperation"]
@@ -1807,6 +1811,16 @@ wheels = [
 ]
 
 [[package]]
+name = "msgpack"
+version = "1.0.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/4c/17adf86a8fbb02c144c7569dc4919483c01a2ac270307e2d59e1ce394087/msgpack-1.0.8.tar.gz", hash = "sha256:95c02b0e27e706e48d0e5426d1710ca78e0f0628d6e89d5b5a5b91a5f12274f3", size = 167014, upload-time = "2024-03-02T01:19:21.299Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f6/f0/a7bdb48223cd21b9abed814b08fca8fe6a40931e70ec97c24d2f15d68ef3/msgpack-1.0.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:83b5c044f3eff2a6534768ccfd50425939e7a8b5cf9a7261c385de1e20dcfc85", size = 409267, upload-time = "2024-03-01T12:35:29.888Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/06/adb6c8cdea18f9ba09b7dc1442b50ce222858ae4a85703420349784429d0/msgpack-1.0.8-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:e2f879ab92ce502a1e65fce390eab619774dda6a6ff719718069ac94084098ce", size = 409109, upload-time = "2024-03-01T12:35:38.839Z" },
+]
+
+[[package]]
 name = "mujoco"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2546,6 +2560,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/68/14/eb014d26be205d38ad5ad20d9a80f7d201472e08167f0bb4361e251084a9/pytest_mock-3.15.1.tar.gz", hash = "sha256:1849a238f6f396da19762269de72cb1814ab44416fa73a8686deac10b0d87a0f", size = 34036, upload-time = "2025-09-16T16:37:27.081Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/cc/06253936f4a7fa2e0f48dfe6d851d9c56df896a9ab09ac019d70b760619c/pytest_mock-3.15.1-py3-none-any.whl", hash = "sha256:0a25e2eb88fe5168d535041d09a4529a188176ae608a6d249ee65abc0949630d", size = 10095, upload-time = "2025-09-16T16:37:25.734Z" },
+]
+
+[[package]]
+name = "python-can"
+version = "4.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "msgpack", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "wrapt", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/dd/f1/327caaf05b6bca594250053058a2adac537a88dfb5c41bb5498cfda9de78/python-can-4.2.2.tar.gz", hash = "sha256:6ad50f4613289f3c4d276b6d2ac8901d776dcb929994cce93f55a69e858c595f", size = 332677, upload-time = "2023-06-18T15:07:47.514Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/8a/c8228e4a54e9f64882a514b7eb39787e4d425a1f0b41908f0c0cd86e8d50/python_can-4.2.2-py3-none-any.whl", hash = "sha256:7eea9b81b0ff908000a825db024313f622895bd578e8a17433e0474cd7d2da83", size = 257040, upload-time = "2023-06-18T15:07:45.704Z" },
 ]
 
 [[package]]
