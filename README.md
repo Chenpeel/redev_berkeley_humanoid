@@ -37,7 +37,7 @@ uv sync --all-packages --group dev --group lowlevel-runtime
 uv sync --all-packages --group dev --group lowlevel-runtime --group teleoperation
 ```
 
-`lowlevel-runtime` 会安装 `python-can`、`setuptools`、`pyserial`、`onnxruntime`、`inputs` 等运行依赖；
+`lowlevel-runtime` 会安装 `python-can`、`setuptools<81`、`pyserial`、`onnxruntime`、`inputs` 等运行依赖；
 `calibrate_joints.py`、`run_idle.py`、`run_locomotion.py`、`test_joystick.py` 都需要先同步这一组。
 
 ## Make 快捷

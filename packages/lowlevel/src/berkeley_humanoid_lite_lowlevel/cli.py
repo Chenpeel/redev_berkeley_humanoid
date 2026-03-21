@@ -9,7 +9,7 @@ _MISSING_DEPENDENCY_HINTS = {
     "can": ("python-can", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
     "inputs": ("inputs", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
     "onnxruntime": ("onnxruntime", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
-    "pkg_resources": ("setuptools", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
+    "pkg_resources": ("setuptools<81", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
     "serial": ("pyserial", _LOWLEVEL_RUNTIME_SYNC_COMMAND),
 }
 

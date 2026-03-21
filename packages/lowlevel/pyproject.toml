@@ -21,7 +21,7 @@ runtime = [
     "psutil",
     "python-can",
     "pyserial",
-    "setuptools",
+    "setuptools<81",
     "torch==2.7.0",
 ]
 teleoperation = [
