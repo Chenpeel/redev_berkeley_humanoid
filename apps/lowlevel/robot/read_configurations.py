@@ -2,11 +2,13 @@
 
 import argparse
 
+from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_lowlevel_errors
 from berkeley_humanoid_lite_lowlevel.runtime_paths import get_hardware_config_path
-from berkeley_humanoid_lite_lowlevel.workflows import export_robot_configuration
 
 
 def main() -> None:
+    from berkeley_humanoid_lite_lowlevel.workflows import export_robot_configuration
+
     parser = argparse.ArgumentParser(description="Export robot configuration")
     parser.add_argument(
         "--output",
@@ -21,4 +23,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_with_friendly_lowlevel_errors(main)

@@ -2,11 +2,13 @@
 
 import argparse
 
-from berkeley_humanoid_lite_lowlevel.actuator import DEFAULT_ACTUATOR_BITRATE
-from berkeley_humanoid_lite_lowlevel.workflows import configure_actuator
+from berkeley_humanoid_lite_lowlevel.cli import run_with_friendly_lowlevel_errors
 
 
 def main() -> None:
+    from berkeley_humanoid_lite_lowlevel.actuator import DEFAULT_ACTUATOR_BITRATE
+    from berkeley_humanoid_lite_lowlevel.workflows import configure_actuator
+
     parser = argparse.ArgumentParser(description="Configure actuator parameters")
     parser.add_argument("--channel", type=str, default="can0", help="CAN transport channel")
     parser.add_argument("--id", type=int, default=1, help="Actuator device identifier")
@@ -61,4 +63,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_with_friendly_lowlevel_errors(main)
