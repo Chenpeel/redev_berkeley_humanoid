@@ -92,7 +92,7 @@ def build_commands_cfg(profile: BalanceTaskProfile):
         """Command specifications for the balance MDP."""
 
         base_velocity = mdp.UniformVelocityCommandCfg(
-            resampling_time_range=(20.0, 20.0),
+            resampling_time_range=(profile.episode_length_s, profile.episode_length_s),
             debug_vis=True,
             asset_name="robot",
             heading_command=False,

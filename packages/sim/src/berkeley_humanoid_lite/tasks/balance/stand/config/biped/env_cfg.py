@@ -59,6 +59,7 @@ _BIPED_STAND_PROFILE = BalanceTaskProfile(
         contact_force_threshold=1.0,
         body_contact_patterns=("base", ".*_hip_.*", ".*_knee_.*"),
     ),
+    episode_length_s=40.0,
 )
 
 CommandsCfg = build_commands_cfg(_BIPED_STAND_PROFILE)

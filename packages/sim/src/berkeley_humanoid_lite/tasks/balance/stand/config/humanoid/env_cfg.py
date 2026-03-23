@@ -65,6 +65,7 @@ _HUMANOID_STAND_PROFILE = BalanceTaskProfile(
         contact_force_threshold=1.0,
         body_contact_patterns=("base", ".*_hip_.*", ".*_knee_.*", ".*_shoulder_.*", ".*_elbow_.*"),
     ),
+    episode_length_s=40.0,
 )
 
 CommandsCfg = build_commands_cfg(_HUMANOID_STAND_PROFILE)
