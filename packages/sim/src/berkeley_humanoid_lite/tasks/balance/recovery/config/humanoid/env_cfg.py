@@ -70,7 +70,7 @@ _HUMANOID_RECOVERY_PROFILE = BalanceTaskProfile(
         interval_range_s=(4.0, 6.0),
         velocity_range={"x": (-0.6, 0.6), "y": (-0.4, 0.4)},
     ),
-    episode_length_s=25.0,
+    episode_length_s=40.0,
 )
 
 CommandsCfg = build_commands_cfg(_HUMANOID_RECOVERY_PROFILE)

@@ -64,7 +64,7 @@ _BIPED_RECOVERY_PROFILE = BalanceTaskProfile(
         interval_range_s=(4.0, 6.0),
         velocity_range={"x": (-0.5, 0.5), "y": (-0.35, 0.35)},
     ),
-    episode_length_s=25.0,
+    episode_length_s=40.0,
 )
 
 CommandsCfg = build_commands_cfg(_BIPED_RECOVERY_PROFILE)
