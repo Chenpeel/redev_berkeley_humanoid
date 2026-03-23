@@ -315,6 +315,16 @@ uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --ex
 
 - `Velocity-Berkeley-Humanoid-Lite-v0`
 - `Velocity-Berkeley-Humanoid-Lite-Biped-v0`
+- `Stand-Berkeley-Humanoid-Lite-v0`
+- `Stand-Berkeley-Humanoid-Lite-Biped-v0`
+- `Recovery-Berkeley-Humanoid-Lite-v0`
+- `Recovery-Berkeley-Humanoid-Lite-Biped-v0`
+
+其中新增的平衡任务分工如下：
+
+- `Stand-*` 用于零速度稳定站立训练，复用现有 locomotion 观测与动作布局，并补充 body-contact termination。
+- `Recovery-*` 在 stand 任务基础上加入 interval push 扰动和更宽的 reset 分布，用于抗推恢复训练。
+- 当前只补齐 Isaac RL 训练侧任务注册、env cfg、PPO runner cfg 和 registry 测试；`Getup-*` 与 lowlevel 自动状态切换还没有实现。
 
 从零训练：
 
@@ -327,6 +337,30 @@ uv run python apps/rsl_rl/train.py \
 # biped
 uv run python apps/rsl_rl/train.py \
   --task Velocity-Berkeley-Humanoid-Lite-Biped-v0 \
+  --headless
+```
+
+##### 平衡任务训练
+
+```bash
+# stand humanoid
+uv run python apps/rsl_rl/train.py \
+  --task Stand-Berkeley-Humanoid-Lite-v0 \
+  --headless
+
+# stand biped
+uv run python apps/rsl_rl/train.py \
+  --task Stand-Berkeley-Humanoid-Lite-Biped-v0 \
+  --headless
+
+# recovery humanoid
+uv run python apps/rsl_rl/train.py \
+  --task Recovery-Berkeley-Humanoid-Lite-v0 \
+  --headless
+
+# recovery biped
+uv run python apps/rsl_rl/train.py \
+  --task Recovery-Berkeley-Humanoid-Lite-Biped-v0 \
   --headless
 ```
 
@@ -344,6 +378,10 @@ uv run python apps/rsl_rl/train.py \
 - 训练根目录：`artifacts/untested_ckpts/rsl_rl/`
 - humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/humanoid/`
 - biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/biped/`
+- stand humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_humanoid/`
+- stand biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_biped/`
+- recovery humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_humanoid/`
+- recovery biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_biped/`
 
 回放并导出部署模型：
 
@@ -360,6 +398,8 @@ uv run python apps/rsl_rl/play.py \
 
 - 从匹配到的最新 run 和最新 `model_*.pt` checkpoint 回放策略
 - 在该 run 目录下导出 `exported/policy.pt` 和 `exported/policy.onnx`
+
+回放 stand / recovery 任务时，把 `--task` 替换成对应的 `Stand-*` 或 `Recovery-*` 即可。
 
 同时会更新默认部署配置：
 
@@ -384,60 +424,3 @@ make test
 make lock
 make tree
 ```
-
-
-
-```bash
-单电机验证
-
-bash apps/lowlevel/start_can_transports.sh
-
-# 左腿
-uv run python apps/lowlevel/motor/ping.py --channel can0 --id 5   # hip_roll
-uv run python apps/lowlevel/motor/ping.py --channel can0 --id 3   # hip_yaw
-uv run python apps/lowlevel/motor/ping.py --channel can0 --id 1   # hip_pitch
-标定与运行前快速确认
-
-uv run python apps/lowlevel/calibrate_joints.py --left-leg-bus can1 --right-leg-bus can0
-uv run python apps/lowlevel/run_idle.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can1 --right-leg-bus can0
-uv run python apps/lowlevel/run_locomotion.py --config configs/policies/policy_biped_50hz.yaml --left-leg-bus can1 --right-leg-bus can0
-
-native 运行时验证
-
-cmake --build build/lowlevel/native --target main -j
-
-./build/lowlevel/native/main \
---left-leg-bus can1 \
---right-leg-bus can0 \
---protocol hiwonder \
---device /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0 \
---baudrate 460800
-```
-
-
-
-```bash
-for id in 1 3 5 7 11 13; do
-    printf "can1 id %2d: " "$id"
-    uv run python apps/lowlevel/motor/ping.py --channel can1 --id "$id"
-done
-
-for id in 2 4 6 8 12 14; do
-    printf "can0 id %2d: " "$id"
-    uv run python apps/lowlevel/motor/ping.py --channel can0 --id "$id"
-done
-
-```
-
-```bash
-  uv run python apps/lowlevel/motor/move_angle.py \
-    --channel can0 \
-    --id 1 \
-    --target-deg 30 \
-    --hold-seconds 1.5 \
-    --position-tolerance-deg 1.5 \
-    --velocity-tolerance-deg 8 \
-    --settle-timeout-seconds 3 \
-    --stable-samples 12
-```
-
