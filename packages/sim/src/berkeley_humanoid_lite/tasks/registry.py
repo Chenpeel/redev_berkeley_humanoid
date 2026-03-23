@@ -5,6 +5,14 @@ from typing import Any
 
 import gymnasium as gym
 
+from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import agents as biped_recovery_agents
+from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import env_cfg as biped_recovery_env_cfg
+from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import agents as humanoid_recovery_agents
+from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import env_cfg as humanoid_recovery_env_cfg
+from berkeley_humanoid_lite.tasks.balance.stand.config.biped import agents as biped_stand_agents
+from berkeley_humanoid_lite.tasks.balance.stand.config.biped import env_cfg as biped_stand_env_cfg
+from berkeley_humanoid_lite.tasks.balance.stand.config.humanoid import agents as humanoid_stand_agents
+from berkeley_humanoid_lite.tasks.balance.stand.config.humanoid import env_cfg as humanoid_stand_env_cfg
 from berkeley_humanoid_lite.tasks.locomotion.velocity.config.biped import agents as biped_agents
 from berkeley_humanoid_lite.tasks.locomotion.velocity.config.biped import env_cfg as biped_env_cfg
 from berkeley_humanoid_lite.tasks.locomotion.velocity.config.humanoid import agents as humanoid_agents
@@ -45,6 +53,30 @@ TASK_REGISTRATIONS: tuple[TaskRegistration, ...] = (
         entry_point="isaaclab.envs:ManagerBasedRLEnv",
         env_cfg_entry_point=biped_env_cfg.BerkeleyHumanoidLiteBipedEnvCfg,
         runner_cfg_entry_point=biped_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedPPORunnerCfg,
+    ),
+    TaskRegistration(
+        task_id="Stand-Berkeley-Humanoid-Lite-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        env_cfg_entry_point=humanoid_stand_env_cfg.BerkeleyHumanoidLiteStandEnvCfg,
+        runner_cfg_entry_point=humanoid_stand_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteStandPPORunnerCfg,
+    ),
+    TaskRegistration(
+        task_id="Stand-Berkeley-Humanoid-Lite-Biped-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        env_cfg_entry_point=biped_stand_env_cfg.BerkeleyHumanoidLiteBipedStandEnvCfg,
+        runner_cfg_entry_point=biped_stand_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedStandPPORunnerCfg,
+    ),
+    TaskRegistration(
+        task_id="Recovery-Berkeley-Humanoid-Lite-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        env_cfg_entry_point=humanoid_recovery_env_cfg.BerkeleyHumanoidLiteRecoveryEnvCfg,
+        runner_cfg_entry_point=humanoid_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteRecoveryPPORunnerCfg,
+    ),
+    TaskRegistration(
+        task_id="Recovery-Berkeley-Humanoid-Lite-Biped-v0",
+        entry_point="isaaclab.envs:ManagerBasedRLEnv",
+        env_cfg_entry_point=biped_recovery_env_cfg.BerkeleyHumanoidLiteBipedRecoveryEnvCfg,
+        runner_cfg_entry_point=biped_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedRecoveryPPORunnerCfg,
     ),
 )
 
