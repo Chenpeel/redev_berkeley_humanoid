@@ -1,5 +1,7 @@
 # Berkeley Humanoid Redev
 
+中文 | [English](README_en.md)
+
 ## 目录
 
 ```text
@@ -321,13 +323,13 @@ uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --ex
 - `Velocity-Berkeley-Humanoid-Lite-Biped-v0`
 - `Stand-Berkeley-Humanoid-Lite-v0`
 - `Stand-Berkeley-Humanoid-Lite-Biped-v0`
-- `Push-Recovery-Berkeley-Humanoid-Lite-v0`
-- `Push-Recovery-Berkeley-Humanoid-Lite-Biped-v0`
+- `Recovery-Berkeley-Humanoid-Lite-v0`
+- `Recovery-Berkeley-Humanoid-Lite-Biped-v0`
 
 其中新增的平衡任务分工如下：
 
 - `Stand-*` 用于零速度稳定站立训练，复用现有 locomotion 观测与动作布局，并补充 body-contact termination。
-- `Push-Recovery-*` 在 stand 任务基础上加入 interval push 扰动和更宽的 reset 分布，用于抗推恢复训练。
+- `Recovery-*` 在 stand 任务基础上加入 interval push 扰动和更宽的 reset 分布，用于抗推恢复训练。
 - 当前只补齐 Isaac RL 训练侧任务注册、env cfg、PPO runner cfg 和 registry 测试；`Getup-*` 与 lowlevel 自动状态切换还没有实现。
 
 从零训练：
@@ -359,12 +361,12 @@ uv run python apps/rsl_rl/train.py \
 
 # push recovery humanoid
 uv run python apps/rsl_rl/train.py \
-  --task Push-Recovery-Berkeley-Humanoid-Lite-v0 \
+  --task Recovery-Berkeley-Humanoid-Lite-v0 \
   --headless
 
 # push recovery biped
 uv run python apps/rsl_rl/train.py \
-  --task Push-Recovery-Berkeley-Humanoid-Lite-Biped-v0 \
+  --task Recovery-Berkeley-Humanoid-Lite-Biped-v0 \
   --headless
 ```
 
@@ -384,8 +386,8 @@ uv run python apps/rsl_rl/train.py \
 - biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/biped/`
 - stand humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_humanoid/`
 - stand biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_biped/`
-- push recovery humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/push_recovery_humanoid/`
-- push recovery biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/push_recovery_biped/`
+- recovery humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_humanoid/`
+- recovery biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_biped/`
 
 回放并导出部署模型：
 
@@ -403,7 +405,7 @@ uv run python apps/rsl_rl/play.py \
 - 从匹配到的最新 run 和最新 `model_*.pt` checkpoint 回放策略
 - 在该 run 目录下导出 `exported/policy.pt` 和 `exported/policy.onnx`
 
-回放 stand / push recovery 任务时，把 `--task` 替换成对应的 `Stand-*` 或 `Push-Recovery-*` 即可。
+回放 stand / recovery 任务时，把 `--task` 替换成对应的 `Stand-*` 或 `Recovery-*` 即可。
 
 同时会更新默认部署配置：
 
@@ -436,4 +438,4 @@ uv run python apps/rsl_rl/play.py \
 原项目的机器人设计、资产、论文、开源发布与基础实现工作归原作者及其团队所有。
 本仓库是面向具体需求的重构与二次开发工作区，不替代上游项目本身。
 
-如果你使用本仓库开展研究、开发或再分发，请同时鸣谢上游Berkeley Humanoid Lite 项目，并遵守其代码与资产对应的许可证要求。
+如果你使用本仓库开展研究、开发或再分发，请同时鸣谢上游 Berkeley Humanoid Lite 项目，并遵守其代码与资产对应的许可证要求。
