@@ -3,6 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def _resolve_actuator_scalar(
+    actuator_name: str,
+    actuator_group: object,
+    *,
+    primary_name: str,
+    fallback_names: tuple[str, ...] = (),
+) -> float:
+    """读取 actuator 配置中的标量参数，并兼容新旧字段名。"""
+
+    for attribute_name in (primary_name, *fallback_names):
+        value = getattr(actuator_group, attribute_name, None)
+        if value is not None:
+            return value
+
+    expected_names = ", ".join((primary_name, *fallback_names))
+    raise ValueError(
+        f"Actuator group {actuator_name!r} does not define any of: {expected_names}"
+    )
+
+
 def export_policy_models(ppo_runner: object, export_directory: str | Path) -> Path:
     """导出 JIT 与 ONNX 策略模型。"""
     from isaaclab_rl.rsl_rl import export_policy_as_jit, export_policy_as_onnx
@@ -36,9 +56,8 @@ def build_policy_deployment_configuration(
     export_directory: str | Path,
 ) -> dict[str, object]:
     """从 Isaac Lab 配置与环境实例抽取部署配置。"""
-    import torch
-
     import isaaclab.utils.string as string_utils
+    import torch
 
     joint_names = list(env_cfg.scene.robot.init_state.joint_pos.keys())
     initial_joint_positions = list(env_cfg.scene.robot.init_state.joint_pos.values())
@@ -48,7 +67,7 @@ def build_policy_deployment_configuration(
     joint_kd = torch.zeros(num_joints, device=env.unwrapped.device)
     effort_limits = torch.zeros(num_joints, device=env.unwrapped.device)
 
-    for actuator_group in env_cfg.scene.robot.actuators.values():
+    for actuator_name, actuator_group in env_cfg.scene.robot.actuators.items():
         match_expression_list = list(actuator_group.joint_names_expr)
         match_expression_dict = {expression: None for expression in match_expression_list}
         indices, _, _ = string_utils.resolve_matching_names_values(
@@ -58,7 +77,12 @@ def build_policy_deployment_configuration(
         )
         joint_kp[indices] = actuator_group.stiffness
         joint_kd[indices] = actuator_group.damping
-        effort_limits[indices] = actuator_group.effort_limit
+        effort_limits[indices] = _resolve_actuator_scalar(
+            actuator_name,
+            actuator_group,
+            primary_name="effort_limit",
+            fallback_names=("effort_limit_sim",),
+        )
 
     action_expression_dict = {expression: None for expression in env_cfg.actions.joint_pos.joint_names}
     action_indices, _, _ = string_utils.resolve_matching_names_values(
