@@ -34,13 +34,15 @@ class LocomotionRobot:
         self.specification = specification or build_default_locomotion_robot_specification()
         self.calibration_store = calibration_store or CalibrationStore()
 
-        position_offsets = self.calibration_store.load_position_offsets(self.specification.joint_count)
+        position_offsets = self.calibration_store.load_position_offsets(
+            self.specification.joint_count)
         self.actuators = LocomotionActuatorArray(
             self.specification,
             position_offsets=position_offsets,
         )
 
-        self.imu = SerialImu(baudrate=self.specification.imu_baudrate) if enable_imu else None
+        self.imu = SerialImu(
+            baudrate=self.specification.imu_baudrate) if enable_imu else None
         if self.imu is not None:
             self.imu.run_forever()
 
@@ -55,8 +57,10 @@ class LocomotionRobot:
         self.state = LocomotionControlState.IDLE
         self.requested_state = LocomotionControlState.INVALID
         self.initialization_progress = 0.0
-        self.starting_positions = np.zeros((self.specification.joint_count,), dtype=np.float32)
-        self.lowlevel_states = np.zeros((self.specification.observation_size,), dtype=np.float32)
+        self.starting_positions = np.zeros(
+            (self.specification.joint_count,), dtype=np.float32)
+        self.lowlevel_states = np.zeros(
+            (self.specification.observation_size,), dtype=np.float32)
 
     @property
     def joint_interfaces(self) -> tuple[JointInterface, ...]:
@@ -111,18 +115,22 @@ class LocomotionRobot:
     def get_observations(self) -> np.ndarray:
         imu_quaternion = self.lowlevel_states[0:4]
         imu_angular_velocity = self.lowlevel_states[4:7]
-        joint_positions = self.lowlevel_states[7:7 + self.specification.joint_count]
+        joint_positions = self.lowlevel_states[7:7 +
+                                               self.specification.joint_count]
         joint_velocities = self.lowlevel_states[
             7 + self.specification.joint_count:7 + self.specification.joint_count * 2
         ]
-        mode = self.lowlevel_states[7 + self.specification.joint_count * 2:7 + self.specification.joint_count * 2 + 1]
-        velocity_commands = self.lowlevel_states[7 + self.specification.joint_count * 2 + 1:]
+        mode = self.lowlevel_states[7 + self.specification.joint_count *
+                                    2:7 + self.specification.joint_count * 2 + 1]
+        velocity_commands = self.lowlevel_states[7 +
+                                                 self.specification.joint_count * 2 + 1:]
 
         if self.imu is not None:
             imu_quaternion[:] = self.imu.quaternion[:]
             imu_angular_velocity[:] = np.deg2rad(self.imu.angular_velocity[:])
         else:
-            imu_quaternion[:] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+            imu_quaternion[:] = np.array(
+                [1.0, 0.0, 0.0, 0.0], dtype=np.float32)
             imu_angular_velocity[:] = 0.0
 
         joint_positions[:] = self.actuators.joint_position_measured[:]
@@ -143,7 +151,8 @@ class LocomotionRobot:
     def step(self, actions: np.ndarray) -> np.ndarray:
         match self.state:
             case LocomotionControlState.IDLE:
-                self.actuators.joint_position_target[:] = self.actuators.joint_position_measured[:]
+                self.actuators.joint_position_target[:
+                                                     ] = self.actuators.joint_position_measured[:]
 
                 if self.requested_state == LocomotionControlState.INITIALIZING:
                     print("Switching to initialization mode")
@@ -155,7 +164,8 @@ class LocomotionRobot:
             case LocomotionControlState.INITIALIZING:
                 print(f"init: {self.initialization_progress:.2f}")
                 if self.initialization_progress < 1.0:
-                    self.initialization_progress = min(self.initialization_progress + 0.01, 1.0)
+                    self.initialization_progress = min(
+                        self.initialization_progress + 0.01, 1.0)
                     self.actuators.joint_position_target[:] = linear_interpolate(
                         self.starting_positions,
                         self.specification.initialization_positions,
