@@ -1,7 +1,5 @@
 # Berkeley Humanoid Redev
 
-> 本仓库用于[Berkeley Humanoid Lite](https://github.com/HybridRobotics/Berkeley-Humanoid-Lite)二次开发
-
 ## 目录
 
 ```text
@@ -10,13 +8,19 @@
 ├── artifacts/
 ├── configs/
 ├── docs/
-├── packages/
-│   ├── assets/
-│   ├── lowlevel/
-│   └── sim/
+└── packages/
+    ├── assets/
+    ├── lowlevel/
+    └── sim/
 ```
 
 ## 安装
+
+```bash
+git clone https://github.com/Chenpeel/redev_berkeley_humanoid.git
+```
+
+
 
 要求 Python `3.11`。
 
@@ -317,13 +321,13 @@ uv run python apps/rsl_rl/play.py --task Velocity-Berkeley-Humanoid-Lite-v0 --ex
 - `Velocity-Berkeley-Humanoid-Lite-Biped-v0`
 - `Stand-Berkeley-Humanoid-Lite-v0`
 - `Stand-Berkeley-Humanoid-Lite-Biped-v0`
-- `Recovery-Berkeley-Humanoid-Lite-v0`
-- `Recovery-Berkeley-Humanoid-Lite-Biped-v0`
+- `Push-Recovery-Berkeley-Humanoid-Lite-v0`
+- `Push-Recovery-Berkeley-Humanoid-Lite-Biped-v0`
 
 其中新增的平衡任务分工如下：
 
 - `Stand-*` 用于零速度稳定站立训练，复用现有 locomotion 观测与动作布局，并补充 body-contact termination。
-- `Recovery-*` 在 stand 任务基础上加入 interval push 扰动和更宽的 reset 分布，用于抗推恢复训练。
+- `Push-Recovery-*` 在 stand 任务基础上加入 interval push 扰动和更宽的 reset 分布，用于抗推恢复训练。
 - 当前只补齐 Isaac RL 训练侧任务注册、env cfg、PPO runner cfg 和 registry 测试；`Getup-*` 与 lowlevel 自动状态切换还没有实现。
 
 从零训练：
@@ -353,14 +357,14 @@ uv run python apps/rsl_rl/train.py \
   --task Stand-Berkeley-Humanoid-Lite-Biped-v0 \
   --headless
 
-# recovery humanoid
+# push recovery humanoid
 uv run python apps/rsl_rl/train.py \
-  --task Recovery-Berkeley-Humanoid-Lite-v0 \
+  --task Push-Recovery-Berkeley-Humanoid-Lite-v0 \
   --headless
 
-# recovery biped
+# push recovery biped
 uv run python apps/rsl_rl/train.py \
-  --task Recovery-Berkeley-Humanoid-Lite-Biped-v0 \
+  --task Push-Recovery-Berkeley-Humanoid-Lite-Biped-v0 \
   --headless
 ```
 
@@ -380,8 +384,8 @@ uv run python apps/rsl_rl/train.py \
 - biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/biped/`
 - stand humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_humanoid/`
 - stand biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/stand_biped/`
-- recovery humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_humanoid/`
-- recovery biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/recovery_biped/`
+- push recovery humanoid 默认实验目录：`artifacts/untested_ckpts/rsl_rl/push_recovery_humanoid/`
+- push recovery biped 默认实验目录：`artifacts/untested_ckpts/rsl_rl/push_recovery_biped/`
 
 回放并导出部署模型：
 
@@ -399,7 +403,7 @@ uv run python apps/rsl_rl/play.py \
 - 从匹配到的最新 run 和最新 `model_*.pt` checkpoint 回放策略
 - 在该 run 目录下导出 `exported/policy.pt` 和 `exported/policy.onnx`
 
-回放 stand / recovery 任务时，把 `--task` 替换成对应的 `Stand-*` 或 `Recovery-*` 即可。
+回放 stand / push recovery 任务时，把 `--task` 替换成对应的 `Stand-*` 或 `Push-Recovery-*` 即可。
 
 同时会更新默认部署配置：
 
@@ -415,12 +419,21 @@ uv run python apps/rsl_rl/play.py \
 - 默认部署配置：`configs/policies/policy_latest.yaml`
 
 
-## 开发命令
 
-```bash
-make verify
-make lint
-make test
-make lock
-make tree
-```
+## 致谢与上游说明
+
+本仓库基于上游
+[Berkeley Humanoid Lite](https://github.com/HybridRobotics/Berkeley-Humanoid-Lite)
+项目进行重构与二次开发。
+
+在当前工作区中，复用了上游公开发布的内容，并在此基础上进行了工程化重组、
+模块拆分、流程整理和功能扩展。复用范围包括但不限于：
+
+- 机器人资产与描述文件，包括 `assets`、mesh、URDF、MJCF、USD 与相关场景内容
+- 仿真与训练相关任务定义、运行流程与配套脚本
+- 低层控制、部署链路及相关工具代码
+
+原项目的机器人设计、资产、论文、开源发布与基础实现工作归原作者及其团队所有。
+本仓库是面向具体需求的重构与二次开发工作区，不替代上游项目本身。
+
+如果你使用本仓库开展研究、开发或再分发，请同时鸣谢上游Berkeley Humanoid Lite 项目，并遵守其代码与资产对应的许可证要求。

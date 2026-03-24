@@ -6,7 +6,6 @@ from berkeley_humanoid_lite.tasks.locomotion.velocity.config.humanoid.agents.rsl
 
 
 @configclass
-class BerkeleyHumanoidLiteRecoveryPPORunnerCfg(BerkeleyHumanoidLitePPORunnerCfg):
-    experiment_name = "recovery_humanoid"
+class BerkeleyHumanoidLitePushRecoveryPPORunnerCfg(BerkeleyHumanoidLitePPORunnerCfg):
+    experiment_name = "push_recovery_humanoid"
     max_iterations = 6000
-

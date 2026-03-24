@@ -5,10 +5,10 @@ from typing import Any
 
 import gymnasium as gym
 
-from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import agents as biped_recovery_agents
-from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import env_cfg as biped_recovery_env_cfg
-from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import agents as humanoid_recovery_agents
-from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import env_cfg as humanoid_recovery_env_cfg
+from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import agents as biped_push_recovery_agents
+from berkeley_humanoid_lite.tasks.balance.recovery.config.biped import env_cfg as biped_push_recovery_env_cfg
+from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import agents as humanoid_push_recovery_agents
+from berkeley_humanoid_lite.tasks.balance.recovery.config.humanoid import env_cfg as humanoid_push_recovery_env_cfg
 from berkeley_humanoid_lite.tasks.balance.stand.config.biped import agents as biped_stand_agents
 from berkeley_humanoid_lite.tasks.balance.stand.config.biped import env_cfg as biped_stand_env_cfg
 from berkeley_humanoid_lite.tasks.balance.stand.config.humanoid import agents as humanoid_stand_agents
@@ -67,16 +67,16 @@ TASK_REGISTRATIONS: tuple[TaskRegistration, ...] = (
         runner_cfg_entry_point=biped_stand_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedStandPPORunnerCfg,
     ),
     TaskRegistration(
-        task_id="Recovery-Berkeley-Humanoid-Lite-v0",
+        task_id="Push-Recovery-Berkeley-Humanoid-Lite-v0",
         entry_point="isaaclab.envs:ManagerBasedRLEnv",
-        env_cfg_entry_point=humanoid_recovery_env_cfg.BerkeleyHumanoidLiteRecoveryEnvCfg,
-        runner_cfg_entry_point=humanoid_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteRecoveryPPORunnerCfg,
+        env_cfg_entry_point=humanoid_push_recovery_env_cfg.BerkeleyHumanoidLitePushRecoveryEnvCfg,
+        runner_cfg_entry_point=humanoid_push_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLitePushRecoveryPPORunnerCfg,
     ),
     TaskRegistration(
-        task_id="Recovery-Berkeley-Humanoid-Lite-Biped-v0",
+        task_id="Push-Recovery-Berkeley-Humanoid-Lite-Biped-v0",
         entry_point="isaaclab.envs:ManagerBasedRLEnv",
-        env_cfg_entry_point=biped_recovery_env_cfg.BerkeleyHumanoidLiteBipedRecoveryEnvCfg,
-        runner_cfg_entry_point=biped_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedRecoveryPPORunnerCfg,
+        env_cfg_entry_point=biped_push_recovery_env_cfg.BerkeleyHumanoidLiteBipedPushRecoveryEnvCfg,
+        runner_cfg_entry_point=biped_push_recovery_agents.rsl_rl_ppo_cfg.BerkeleyHumanoidLiteBipedPushRecoveryPPORunnerCfg,
     ),
 )
 

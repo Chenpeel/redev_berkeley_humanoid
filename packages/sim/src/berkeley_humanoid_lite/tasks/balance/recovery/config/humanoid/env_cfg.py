@@ -17,8 +17,8 @@ from berkeley_humanoid_lite.tasks.balance.common import (
 )
 from berkeley_humanoid_lite.tasks.locomotion.velocity.config.common import CommandRange, JointDeviationPenalty
 
-_HUMANOID_RECOVERY_PROFILE = BalanceTaskProfile(
-    class_name="BerkeleyHumanoidLiteRecovery",
+_HUMANOID_PUSH_RECOVERY_PROFILE = BalanceTaskProfile(
+    class_name="BerkeleyHumanoidLitePushRecovery",
     joint_names=tuple(FULL_BODY_JOINT_NAMES),
     robot_cfg=FULL_BODY_ARTICULATION_CFG,
     command_range=CommandRange(
@@ -75,16 +75,16 @@ _HUMANOID_RECOVERY_PROFILE = BalanceTaskProfile(
     episode_length_s=40.0,
 )
 
-CommandsCfg = build_commands_cfg(_HUMANOID_RECOVERY_PROFILE)
-ObservationsCfg = build_observations_cfg(_HUMANOID_RECOVERY_PROFILE)
-ActionsCfg = build_actions_cfg(_HUMANOID_RECOVERY_PROFILE)
-RewardsCfg = build_rewards_cfg(_HUMANOID_RECOVERY_PROFILE)
-TerminationsCfg = build_terminations_cfg(_HUMANOID_RECOVERY_PROFILE)
-EventsCfg = build_events_cfg(_HUMANOID_RECOVERY_PROFILE)
-CurriculumsCfg = build_curriculums_cfg(_HUMANOID_RECOVERY_PROFILE)
-BerkeleyHumanoidLiteRecoveryEnvCfg = build_environment_cfg(
-    class_name="BerkeleyHumanoidLiteRecoveryEnvCfg",
-    profile=_HUMANOID_RECOVERY_PROFILE,
+CommandsCfg = build_commands_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+ObservationsCfg = build_observations_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+ActionsCfg = build_actions_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+RewardsCfg = build_rewards_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+TerminationsCfg = build_terminations_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+EventsCfg = build_events_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+CurriculumsCfg = build_curriculums_cfg(_HUMANOID_PUSH_RECOVERY_PROFILE)
+BerkeleyHumanoidLitePushRecoveryEnvCfg = build_environment_cfg(
+    class_name="BerkeleyHumanoidLitePushRecoveryEnvCfg",
+    profile=_HUMANOID_PUSH_RECOVERY_PROFILE,
     commands_cfg_cls=CommandsCfg,
     observations_cfg_cls=ObservationsCfg,
     actions_cfg_cls=ActionsCfg,

@@ -6,7 +6,6 @@ from berkeley_humanoid_lite.tasks.locomotion.velocity.config.biped.agents.rsl_rl
 
 
 @configclass
-class BerkeleyHumanoidLiteBipedRecoveryPPORunnerCfg(BerkeleyHumanoidLiteBipedPPORunnerCfg):
-    experiment_name = "recovery_biped"
+class BerkeleyHumanoidLiteBipedPushRecoveryPPORunnerCfg(BerkeleyHumanoidLiteBipedPPORunnerCfg):
+    experiment_name = "push_recovery_biped"
     max_iterations = 6000
-

@@ -17,8 +17,8 @@ from berkeley_humanoid_lite.tasks.balance.common import (
 )
 from berkeley_humanoid_lite.tasks.locomotion.velocity.config.common import CommandRange, JointDeviationPenalty
 
-_BIPED_RECOVERY_PROFILE = BalanceTaskProfile(
-    class_name="BerkeleyHumanoidLiteBipedRecovery",
+_BIPED_PUSH_RECOVERY_PROFILE = BalanceTaskProfile(
+    class_name="BerkeleyHumanoidLiteBipedPushRecovery",
     joint_names=tuple(LEG_JOINT_NAMES),
     robot_cfg=BIPED_ARTICULATION_CFG,
     command_range=CommandRange(
@@ -69,16 +69,16 @@ _BIPED_RECOVERY_PROFILE = BalanceTaskProfile(
     episode_length_s=40.0,
 )
 
-CommandsCfg = build_commands_cfg(_BIPED_RECOVERY_PROFILE)
-ObservationsCfg = build_observations_cfg(_BIPED_RECOVERY_PROFILE)
-ActionsCfg = build_actions_cfg(_BIPED_RECOVERY_PROFILE)
-RewardsCfg = build_rewards_cfg(_BIPED_RECOVERY_PROFILE)
-TerminationsCfg = build_terminations_cfg(_BIPED_RECOVERY_PROFILE)
-EventsCfg = build_events_cfg(_BIPED_RECOVERY_PROFILE)
-CurriculumsCfg = build_curriculums_cfg(_BIPED_RECOVERY_PROFILE)
-BerkeleyHumanoidLiteBipedRecoveryEnvCfg = build_environment_cfg(
-    class_name="BerkeleyHumanoidLiteBipedRecoveryEnvCfg",
-    profile=_BIPED_RECOVERY_PROFILE,
+CommandsCfg = build_commands_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+ObservationsCfg = build_observations_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+ActionsCfg = build_actions_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+RewardsCfg = build_rewards_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+TerminationsCfg = build_terminations_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+EventsCfg = build_events_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+CurriculumsCfg = build_curriculums_cfg(_BIPED_PUSH_RECOVERY_PROFILE)
+BerkeleyHumanoidLiteBipedPushRecoveryEnvCfg = build_environment_cfg(
+    class_name="BerkeleyHumanoidLiteBipedPushRecoveryEnvCfg",
+    profile=_BIPED_PUSH_RECOVERY_PROFILE,
     commands_cfg_cls=CommandsCfg,
     observations_cfg_cls=ObservationsCfg,
     actions_cfg_cls=ActionsCfg,
