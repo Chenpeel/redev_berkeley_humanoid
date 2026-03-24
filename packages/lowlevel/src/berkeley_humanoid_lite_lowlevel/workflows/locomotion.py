@@ -46,7 +46,15 @@ def print_locomotion_debug_snapshot(
     command_velocity = observations[command_start : command_start + 3]
     targets = np.asarray(robot.actuators.joint_position_target, dtype=np.float32)
     measured = np.asarray(robot.joint_position_measured, dtype=np.float32)
+    offsets = np.asarray(robot.position_offsets, dtype=np.float32)
+    directions = np.asarray(robot.joint_axis_directions, dtype=np.float32)
+    initialization_positions = np.asarray(robot.specification.initialization_positions, dtype=np.float32)
     position_error = targets - measured
+    delta_to_initialization = initialization_positions - measured
+    raw_targets = (targets + offsets) * directions
+    raw_measured = (measured + offsets) * directions
+    raw_initialization_targets = (initialization_positions + offsets) * directions
+    raw_delta_to_initialization = raw_initialization_targets - raw_measured
 
     print(
         "[DEBUG] "
@@ -59,6 +67,11 @@ def print_locomotion_debug_snapshot(
     print("[DEBUG] targets  =", _format_array(targets))
     print("[DEBUG] measured =", _format_array(measured))
     print("[DEBUG] error    =", _format_array(position_error))
+    print("[DEBUG] offsets  =", _format_array(offsets))
+    print("[DEBUG] raw_tgt  =", _format_array(raw_targets))
+    print("[DEBUG] raw_meas =", _format_array(raw_measured))
+    print("[DEBUG] init_err =", _format_array(delta_to_initialization))
+    print("[DEBUG] init_raw =", _format_array(raw_delta_to_initialization))
 
 
 def create_observation_stream(configuration: PolicyDeploymentConfiguration) -> UDP:

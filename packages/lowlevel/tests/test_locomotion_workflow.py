@@ -125,11 +125,17 @@ class LocomotionWorkflowTests(unittest.TestCase):
 
         class FakeRobot:
             def __init__(self) -> None:
-                self.specification = SimpleNamespace(joint_count=2)
+                self.specification = SimpleNamespace(
+                    joint_count=2,
+                    initialization_positions=np.array([0.25, -0.35], dtype=np.float32),
+                )
                 self.actuators = SimpleNamespace(
                     joint_position_target=np.array([0.0, 0.0], dtype=np.float32),
+                    position_offsets=np.array([1.0, -2.0], dtype=np.float32),
                 )
                 self.joint_position_measured = np.array([0.0, 0.0], dtype=np.float32)
+                self.position_offsets = np.array([1.0, -2.0], dtype=np.float32)
+                self.joint_axis_directions = np.array([1.0, -1.0], dtype=np.float32)
                 self.state = LocomotionControlState.POLICY_CONTROL
                 self.requested_state = LocomotionControlState.POLICY_CONTROL
 
@@ -190,6 +196,11 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertIn("[DEBUG] targets", output)
         self.assertIn("[DEBUG] measured", output)
         self.assertIn("[DEBUG] error", output)
+        self.assertIn("[DEBUG] offsets", output)
+        self.assertIn("[DEBUG] raw_tgt", output)
+        self.assertIn("[DEBUG] raw_meas", output)
+        self.assertIn("[DEBUG] init_err", output)
+        self.assertIn("[DEBUG] init_raw", output)
 
 
 if __name__ == "__main__":
