@@ -18,6 +18,17 @@ def main() -> None:
         help="Path to the deployment configuration file",
     )
     add_leg_bus_arguments(parser)
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print locomotion state, command, action, and joint snapshots while running",
+    )
+    parser.add_argument(
+        "--debug-every",
+        type=int,
+        default=25,
+        help="Print a debug snapshot every N policy steps when --debug is enabled",
+    )
     arguments = parser.parse_args()
 
     configuration = load_policy_deployment_configuration(arguments.config)
@@ -25,6 +36,8 @@ def main() -> None:
         configuration,
         left_leg_bus=arguments.left_leg_bus,
         right_leg_bus=arguments.right_leg_bus,
+        debug=arguments.debug,
+        debug_every=arguments.debug_every,
     )
 
 

@@ -11,6 +11,7 @@ from cc.udp import UDP
 from loop_rate_limiters import RateLimiter
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource, LocomotionCommand
+from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import build_leg_locomotion_robot_specification
 
 if TYPE_CHECKING:
@@ -20,6 +21,44 @@ if TYPE_CHECKING:
 DEFAULT_GAMEPAD_UDP_HOST = "127.0.0.1"
 DEFAULT_GAMEPAD_UDP_PORT = 10011
 DEFAULT_GAMEPAD_UDP_RATE_HZ = 20.0
+
+
+def _format_array(values: np.ndarray) -> str:
+    return np.array2string(np.asarray(values, dtype=np.float32), precision=3, suppress_small=True, floatmode="fixed")
+
+
+def _format_control_state(value: object) -> str:
+    try:
+        return LocomotionControlState(int(value)).name
+    except (TypeError, ValueError):
+        return f"UNKNOWN({value})"
+
+
+def print_locomotion_debug_snapshot(
+    *,
+    step_index: int,
+    robot: object,
+    observations: np.ndarray,
+    actions: np.ndarray,
+) -> None:
+    joint_count = int(robot.specification.joint_count)
+    command_start = 7 + joint_count * 2 + 1
+    command_velocity = observations[command_start : command_start + 3]
+    targets = np.asarray(robot.actuators.joint_position_target, dtype=np.float32)
+    measured = np.asarray(robot.joint_position_measured, dtype=np.float32)
+    position_error = targets - measured
+
+    print(
+        "[DEBUG] "
+        f"step={step_index} "
+        f"state={_format_control_state(getattr(robot, 'state', None))} "
+        f"requested={_format_control_state(getattr(robot, 'requested_state', None))} "
+        f"cmd=({command_velocity[0]:+.3f}, {command_velocity[1]:+.3f}, {command_velocity[2]:+.3f})"
+    )
+    print("[DEBUG] actions  =", _format_array(actions))
+    print("[DEBUG] targets  =", _format_array(targets))
+    print("[DEBUG] measured =", _format_array(measured))
+    print("[DEBUG] error    =", _format_array(position_error))
 
 
 def create_observation_stream(configuration: PolicyDeploymentConfiguration) -> UDP:
@@ -72,10 +111,17 @@ def run_locomotion_loop(
     *,
     left_leg_bus: str = "can0",
     right_leg_bus: str = "can1",
+    debug: bool = False,
+    debug_every: int = 25,
 ) -> None:
     from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
+    if debug_every <= 0:
+        raise ValueError("debug_every must be positive")
+
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
+    if debug:
+        print(f"Debug snapshots enabled every {debug_every} policy steps")
 
     controller = PolicyController(configuration)
     controller.load_policy()
@@ -91,12 +137,30 @@ def run_locomotion_loop(
         observation_stream = create_observation_stream(configuration)
         robot.enter_damping_mode()
         observations = robot.reset()
+        step_index = 0
+        previous_state = None
+        previous_requested_state = None
 
         while True:
             actions = controller.compute_actions(observations)
             observations = robot.step(actions)
+            if debug:
+                state_changed = (
+                    robot.state != previous_state
+                    or robot.requested_state != previous_requested_state
+                )
+                if state_changed or step_index % debug_every == 0:
+                    print_locomotion_debug_snapshot(
+                        step_index=step_index,
+                        robot=robot,
+                        observations=observations,
+                        actions=actions,
+                    )
+                previous_state = robot.state
+                previous_requested_state = robot.requested_state
             observation_stream.send_numpy(observations)
             rate.sleep()
+            step_index += 1
     except KeyboardInterrupt:
         print("Stopping locomotion loop.")
     finally:

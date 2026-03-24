@@ -119,6 +119,78 @@ class LocomotionWorkflowTests(unittest.TestCase):
             enable_command_source=False,
         )
 
+    def test_run_locomotion_loop_debug_prints_state_command_and_joint_data(self) -> None:
+        fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
+        fake_policy_module.PolicyController = FakePolicyController
+
+        class FakeRobot:
+            def __init__(self) -> None:
+                self.specification = SimpleNamespace(joint_count=2)
+                self.actuators = SimpleNamespace(
+                    joint_position_target=np.array([0.0, 0.0], dtype=np.float32),
+                )
+                self.joint_position_measured = np.array([0.0, 0.0], dtype=np.float32)
+                self.state = LocomotionControlState.POLICY_CONTROL
+                self.requested_state = LocomotionControlState.POLICY_CONTROL
+
+            def enter_damping_mode(self) -> None:
+                return None
+
+            def reset(self) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def step(self, actions: np.ndarray) -> np.ndarray:
+                self.actuators.joint_position_target = actions.copy()
+                self.joint_position_measured = np.array([0.05, -0.15], dtype=np.float32)
+
+                observations = np.zeros((15,), dtype=np.float32)
+                observations[12:15] = np.array([0.3, -0.1, 0.2], dtype=np.float32)
+                return observations
+
+            def stop(self) -> None:
+                return None
+
+        class FakeObservationStream:
+            def send_numpy(self, observations: np.ndarray) -> None:
+                raise KeyboardInterrupt()
+
+            def stop(self) -> None:
+                return None
+
+        configuration = SimpleNamespace(
+            policy_dt=0.02,
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, 0.0],
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            with mock.patch.dict(
+                "sys.modules",
+                {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
+            ):
+                with mock.patch.object(locomotion_workflow, "create_locomotion_robot", return_value=FakeRobot()):
+                    with mock.patch.object(
+                        locomotion_workflow,
+                        "create_observation_stream",
+                        return_value=FakeObservationStream(),
+                    ):
+                        locomotion_workflow.run_locomotion_loop(
+                            configuration,
+                            debug=True,
+                            debug_every=1,
+                        )
+
+        output = stdout.getvalue()
+        self.assertIn("Debug snapshots enabled every 1 policy steps", output)
+        self.assertIn("state=POLICY_CONTROL", output)
+        self.assertIn("requested=POLICY_CONTROL", output)
+        self.assertIn("cmd=(+0.300, -0.100, +0.200)", output)
+        self.assertIn("[DEBUG] actions", output)
+        self.assertIn("[DEBUG] targets", output)
+        self.assertIn("[DEBUG] measured", output)
+        self.assertIn("[DEBUG] error", output)
+
 
 if __name__ == "__main__":
     unittest.main()
