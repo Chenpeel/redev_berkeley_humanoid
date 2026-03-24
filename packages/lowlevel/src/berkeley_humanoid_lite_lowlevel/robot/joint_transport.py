@@ -20,6 +20,8 @@ class JointInterface:
 class LocomotionActuatorArray:
     """管理 locomotion 机器人的执行器通信和坐标变换。"""
 
+    _ANGLE_PERIOD = float(2.0 * np.pi)
+
     def __init__(
         self,
         specification: LocomotionRobotSpecification,
@@ -50,10 +52,23 @@ class LocomotionActuatorArray:
         self.joint_position_target = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_position_measured = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_velocity_measured = np.zeros((self.specification.joint_count,), dtype=np.float32)
+        self._raw_position_measured = np.full((self.specification.joint_count,), np.nan, dtype=np.float32)
 
         self.joint_kp = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_kd = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.torque_limit = np.zeros((self.specification.joint_count,), dtype=np.float32)
+
+    def _unwrap_raw_position(self, index: int, position_measured: float) -> float:
+        previous_position = float(self._raw_position_measured[index])
+        continuous_position = float(position_measured)
+
+        if not np.isnan(previous_position):
+            continuous_position += self._ANGLE_PERIOD * round(
+                (previous_position - continuous_position) / self._ANGLE_PERIOD
+            )
+
+        self._raw_position_measured[index] = np.float32(continuous_position)
+        return continuous_position
 
     def configure_damping_mode(
         self,
@@ -104,8 +119,9 @@ class LocomotionActuatorArray:
         positions = np.zeros((self.specification.joint_count,), dtype=np.float32)
         for index, joint in enumerate(self.joint_interfaces):
             position_measured = joint.bus.read_position_measured(joint.device_id)
+            continuous_position = self._unwrap_raw_position(index, position_measured)
             positions[index] = (
-                position_measured * self.joint_axis_directions[index]
+                continuous_position * self.joint_axis_directions[index]
             ) - self.position_offsets[index]
         return positions
 
@@ -136,6 +152,7 @@ class LocomotionActuatorArray:
 
         # 执行器和策略坐标系不同，这里统一做方向与零位变换。
         if left_position_measured is not None:
+            left_position_measured = self._unwrap_raw_position(left_index, left_position_measured)
             self.joint_position_measured[left_index] = (
                 left_position_measured * self.joint_axis_directions[left_index]
             ) - self.position_offsets[left_index]
@@ -144,6 +161,7 @@ class LocomotionActuatorArray:
                 left_velocity_measured * self.joint_axis_directions[left_index]
             )
         if right_position_measured is not None:
+            right_position_measured = self._unwrap_raw_position(right_index, right_position_measured)
             self.joint_position_measured[right_index] = (
                 right_position_measured * self.joint_axis_directions[right_index]
             ) - self.position_offsets[right_index]
