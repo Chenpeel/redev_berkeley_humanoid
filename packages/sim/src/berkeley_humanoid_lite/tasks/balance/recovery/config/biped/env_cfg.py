@@ -37,6 +37,8 @@ _BIPED_RECOVERY_PROFILE = BalanceTaskProfile(
         termination_penalty_weight=-20.0,
         undesired_contact_weight=-2.5,
         undesired_contact_body_patterns=("base", ".*_hip_.*", ".*_knee_.*"),
+        feet_slide_weight=-0.25,
+        feet_air_time_penalty_weight=-0.15,
         joint_deviation_penalties=(
             JointDeviationPenalty("joint_deviation_hip", (".*_hip_yaw_joint", ".*_hip_roll_joint"), -0.2),
             JointDeviationPenalty("joint_deviation_ankle_roll", (".*_ankle_roll_joint",), -0.2),

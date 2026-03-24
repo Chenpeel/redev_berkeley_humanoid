@@ -64,6 +64,9 @@ class BalanceRewardProfile:
     undesired_contact_weight: float
     undesired_contact_body_patterns: tuple[str, ...]
     joint_deviation_penalties: tuple[JointDeviationPenalty, ...]
+    feet_body_patterns: tuple[str, ...] = (".*_ankle_roll",)
+    feet_slide_weight: float = 0.0
+    feet_air_time_penalty_weight: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,7 @@ def build_rewards_cfg(profile: BalanceTaskProfile):
 
     reward_profile = profile.reward_profile
     joint_names = list(profile.joint_names)
+    feet_body_names = list(reward_profile.feet_body_patterns)
 
     rewards_cfg = {
         "__doc__": "Reward terms for balance-oriented tasks.",
@@ -168,6 +172,25 @@ def build_rewards_cfg(profile: BalanceTaskProfile):
             weight=reward_profile.undesired_contact_weight,
         ),
     }
+
+    if reward_profile.feet_slide_weight != 0.0:
+        rewards_cfg["feet_slide"] = RewTerm(
+            func=mdp.feet_slide,
+            params={
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=feet_body_names),
+                "asset_cfg": SceneEntityCfg("robot", body_names=feet_body_names),
+            },
+            weight=reward_profile.feet_slide_weight,
+        )
+
+    if reward_profile.feet_air_time_penalty_weight != 0.0:
+        rewards_cfg["feet_air_time_penalty"] = RewTerm(
+            func=mdp.feet_air_time_penalty,
+            params={
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=feet_body_names),
+            },
+            weight=reward_profile.feet_air_time_penalty_weight,
+        )
 
     for penalty in reward_profile.joint_deviation_penalties:
         rewards_cfg[penalty.attribute_name] = RewTerm(
