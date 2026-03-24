@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from berkeley_humanoid_lite_lowlevel.robot import (
-    LocomotionRobot,
     build_leg_locomotion_robot_specification,
     capture_calibration_offsets,
 )
+from berkeley_humanoid_lite_lowlevel.robot.calibration import CalibrationStore
+from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource
+from berkeley_humanoid_lite_lowlevel.robot.joint_transport import LocomotionActuatorArray
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
     DEFAULT_LEFT_LEG_BUS,
     DEFAULT_RIGHT_LEG_BUS,
@@ -18,25 +22,31 @@ def run_joint_calibration(
     left_leg_bus: str = DEFAULT_LEFT_LEG_BUS,
     right_leg_bus: str = DEFAULT_RIGHT_LEG_BUS,
 ) -> None:
-    robot = None
+    actuator_array = None
+    command_source = None
 
     try:
         specification = build_leg_locomotion_robot_specification(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
         )
-        robot = LocomotionRobot(
+        # 标定必须基于原始位置读数，不能先加载已有 calibration.yaml，
+        # 否则重复标定会在旧 offset 基础上继续漂移。
+        actuator_array = LocomotionActuatorArray(
             specification=specification,
-            enable_imu=False,
-            enable_command_source=True,
+            position_offsets=np.zeros((specification.joint_count,), dtype=np.float32),
         )
+        command_source = GamepadCommandSource()
+        command_source.start()
         position_offsets = capture_calibration_offsets(
-            robot.specification,
-            robot.actuators,
-            robot.command_source,
+            specification,
+            actuator_array,
+            command_source,
         )
-        calibration_path = robot.calibration_store.save_position_offsets(position_offsets)
+        calibration_path = CalibrationStore().save_position_offsets(position_offsets)
         print(f"saved calibration to {calibration_path}")
     finally:
-        if robot is not None:
-            robot.shutdown()
+        if command_source is not None:
+            command_source.stop()
+        if actuator_array is not None:
+            actuator_array.shutdown()
