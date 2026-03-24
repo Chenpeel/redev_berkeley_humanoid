@@ -138,20 +138,20 @@
     </body>
   </worldbody>
   <asset>
-    <mesh file="merged/base_visual.stl"/>
-    <mesh file="merged/leg_left_knee_pitch_visual.stl"/>
-    <mesh file="merged/leg_right_hip_pitch_visual.stl"/>
-    <mesh file="merged/leg_left_hip_yaw_visual.stl"/>
-    <mesh file="merged/leg_right_hip_yaw_visual.stl"/>
-    <mesh file="merged/leg_left_hip_pitch_visual.stl"/>
-    <mesh file="merged/leg_left_hip_roll_visual.stl"/>
-    <mesh file="merged/leg_right_hip_roll_visual.stl"/>
-    <mesh file="merged/leg_right_knee_pitch_visual.stl"/>
-    <mesh file="merged/leg_left_ankle_roll_visual.stl"/>
-    <mesh file="merged/leg_right_ankle_roll_visual.stl"/>
-    <mesh file="merged/imu_2_visual.stl"/>
-    <mesh file="merged/leg_right_ankle_pitch_visual.stl"/>
-    <mesh file="merged/leg_left_ankle_pitch_visual.stl"/>
+    <mesh file="../meshes/base_visual.stl"/>
+    <mesh file="../meshes/leg_left_knee_pitch_visual.stl"/>
+    <mesh file="../meshes/leg_right_hip_pitch_visual.stl"/>
+    <mesh file="../meshes/leg_left_hip_yaw_visual.stl"/>
+    <mesh file="../meshes/leg_right_hip_yaw_visual.stl"/>
+    <mesh file="../meshes/leg_left_hip_pitch_visual.stl"/>
+    <mesh file="../meshes/leg_left_hip_roll_visual.stl"/>
+    <mesh file="../meshes/leg_right_hip_roll_visual.stl"/>
+    <mesh file="../meshes/leg_right_knee_pitch_visual.stl"/>
+    <mesh file="../meshes/leg_left_ankle_roll_visual.stl"/>
+    <mesh file="../meshes/leg_right_ankle_roll_visual.stl"/>
+    <mesh file="../meshes/imu_2_visual.stl"/>
+    <mesh file="../meshes/leg_right_ankle_pitch_visual.stl"/>
+    <mesh file="../meshes/leg_left_ankle_pitch_visual.stl"/>
     <material name="base_visual_material" rgba="0.67254 0.67254 0.67254 1"/>
     <material name="imu_2_visual_material" rgba="0.8 0.8 0.8 1"/>
     <material name="leg_left_hip_roll_visual_material" rgba="0.559597 0.559597 0.559597 1"/>

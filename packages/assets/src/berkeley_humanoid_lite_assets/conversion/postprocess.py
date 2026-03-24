@@ -16,6 +16,7 @@ _MESH_REFERENCE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("package://assets/merged/", "../meshes/"),
     ("./assets/merged/", "../meshes/"),
     ("assets/merged/", "../meshes/"),
+    ("merged/", "../meshes/"),
     ("package://../meshes/", "../meshes/"),
     ("package://", "./"),
 )

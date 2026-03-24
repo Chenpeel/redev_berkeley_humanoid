@@ -38,8 +38,14 @@ class AssetConversionTestCase(unittest.TestCase):
         self.assertEqual(layout.staging_directory, get_format_dir("urdf") / "assets")
 
     def test_rewrite_mesh_references_normalizes_supported_prefixes(self) -> None:
-        rewritten = rewrite_mesh_references("package://./assets/merged/example.stl")
-        self.assertEqual(rewritten, "../meshes/example.stl")
+        self.assertEqual(
+            rewrite_mesh_references("package://./assets/merged/example.stl"),
+            "../meshes/example.stl",
+        )
+        self.assertEqual(
+            rewrite_mesh_references("merged/example.stl"),
+            "../meshes/example.stl",
+        )
 
     def test_inject_mjcf_sensors_adds_single_sensor_block(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
