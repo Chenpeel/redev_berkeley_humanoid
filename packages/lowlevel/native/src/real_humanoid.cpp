@@ -12,6 +12,8 @@ namespace
 {
 
   namespace fs = std::filesystem;
+  constexpr double kImuReadyTimeoutSeconds = 2.0;
+  constexpr double kImuReadyMaxStalenessSeconds = 0.5;
 
   bool is_workspace_root(const fs::path &candidate)
   {
@@ -251,16 +253,33 @@ void RealHumanoid::control_loop()
   printf("\n");
 #endif
 
+  const IMUSnapshot imu_snapshot = imu->snapshot();
+  static double last_imu_warning_timestamp = 0.0;
+  if (!imu_snapshot.is_ready(kImuReadyMaxStalenessSeconds))
+  {
+    if (imu_snapshot.captured_at - last_imu_warning_timestamp >= 1.0)
+    {
+      printf(
+          "[WARN] <IMU>: stale or incomplete IMU sample while control is running. "
+          "quaternion_ready=%d angular_velocity_ready=%d quaternion_age=%.3f angular_velocity_age=%.3f\n",
+          imu_snapshot.quaternion_ready,
+          imu_snapshot.angular_velocity_ready,
+          imu_snapshot.quaternion_age_seconds(),
+          imu_snapshot.angular_velocity_age_seconds());
+      last_imu_warning_timestamp = imu_snapshot.captured_at;
+    }
+  }
+
   /* base_quat */
-  lowlevel_states[0] = imu->quaternion[0];
-  lowlevel_states[1] = imu->quaternion[1];
-  lowlevel_states[2] = imu->quaternion[2];
-  lowlevel_states[3] = imu->quaternion[3];
+  lowlevel_states[0] = imu_snapshot.quaternion[0];
+  lowlevel_states[1] = imu_snapshot.quaternion[1];
+  lowlevel_states[2] = imu_snapshot.quaternion[2];
+  lowlevel_states[3] = imu_snapshot.quaternion[3];
 
   /* base_ang_vel */
-  lowlevel_states[4] = imu->angular_velocity[0];
-  lowlevel_states[5] = imu->angular_velocity[1];
-  lowlevel_states[6] = imu->angular_velocity[2];
+  lowlevel_states[4] = imu_snapshot.angular_velocity[0];
+  lowlevel_states[5] = imu_snapshot.angular_velocity[1];
+  lowlevel_states[6] = imu_snapshot.angular_velocity[2];
 
   /* joint_positions */
   for (int i = 0; i < N_JOINTS; i += 1)
@@ -660,10 +679,23 @@ void RealHumanoid::run()
 
   printf("Motors enabled\n");
 
+  loop_imu->start();
+  if (!imu->wait_until_ready(kImuReadyTimeoutSeconds, kImuReadyMaxStalenessSeconds))
+  {
+    const IMUSnapshot imu_snapshot = imu->snapshot();
+    loop_imu->shutdown();
+    throw std::runtime_error(
+        "IMU did not become ready before starting native control. timeout=" +
+        std::to_string(kImuReadyTimeoutSeconds) +
+        " quaternion_ready=" + std::to_string(imu_snapshot.quaternion_ready) +
+        " angular_velocity_ready=" + std::to_string(imu_snapshot.angular_velocity_ready) +
+        " quaternion_age=" + std::to_string(imu_snapshot.quaternion_age_seconds()) +
+        " angular_velocity_age=" + std::to_string(imu_snapshot.angular_velocity_age_seconds()));
+  }
+
   loop_udp_recv->start();
   loop_keyboard->start();
   loop_joystick->start();
-  loop_imu->start();
   loop_control->start();
 
   while (stopped != 2)

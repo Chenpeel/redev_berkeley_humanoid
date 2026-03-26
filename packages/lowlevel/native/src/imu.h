@@ -2,9 +2,11 @@
 
 #pragma once
 
+#include <array>
 #include <fcntl.h>
 #include <glob.h>
 #include <math.h>
+#include <mutex>
 #include <termios.h>
 #include <unistd.h>
 
@@ -64,6 +66,24 @@ IMUConfiguration resolve_imu_configuration(const IMUCliOptions &options);
 const char *imu_protocol_name(IMUProtocol protocol);
 
 
+struct IMUSnapshot {
+  double captured_at = 0.0;
+  double last_frame_timestamp = 0.0;
+  double last_quaternion_timestamp = 0.0;
+  double last_angular_velocity_timestamp = 0.0;
+  std::array<float, 4> quaternion = {0.0f, 0.0f, 0.0f, 0.0f};
+  std::array<float, 3> angular_velocity = {0.0f, 0.0f, 0.0f};
+  std::array<float, 3> angle = {0.0f, 0.0f, 0.0f};
+  std::array<float, 3> gravity_vector = {0.0f, 0.0f, 0.0f};
+  bool quaternion_ready = false;
+  bool angular_velocity_ready = false;
+
+  double quaternion_age_seconds() const;
+  double angular_velocity_age_seconds() const;
+  bool is_ready(double max_staleness_seconds = -1.0) const;
+};
+
+
 class IMU {
   public:
     float quaternion[4];        // quaternion, (w, x, y, z)
@@ -77,8 +97,16 @@ class IMU {
 
     ssize_t init();
 
+    int read_frame_type();
     bool update_reading();
     bool probe(double duration_seconds);
+    IMUSnapshot snapshot() const;
+    bool is_ready(double max_staleness_seconds = -1.0) const;
+    bool wait_until_ready(
+        double timeout_seconds,
+        double max_staleness_seconds = -1.0,
+        double poll_interval_seconds = 0.01);
+    void adopt_file_descriptor_for_testing(int file_descriptor);
 
     const std::string &device() const { return path_; }
     int baudrate_value() const { return baudrate_value_; }
@@ -86,12 +114,37 @@ class IMU {
 
   private:
     int fd = -1;
+    bool owns_fd_ = true;
     std::string path_;
     speed_t baudrate_;
     int baudrate_value_;
     IMUProtocol protocol_;
     double timeout_;
+    mutable std::mutex state_mutex_;
+    bool quaternion_ready_ = false;
+    bool angular_velocity_ready_ = false;
+    double last_frame_timestamp_ = 0.0;
+    double last_quaternion_timestamp_ = 0.0;
+    double last_angular_velocity_timestamp_ = 0.0;
+    std::vector<uint8_t> hiwonder_read_buffer_;
 
     bool read_packet_frame();
     bool read_hiwonder_frame();
+    int read_hiwonder_frame_type();
+    int try_extract_hiwonder_frame_type_from_buffer();
+    void reset_state();
+    void apply_packet_sample(const float *uart_buffer, double frame_timestamp);
+    void apply_hiwonder_frame(
+        uint8_t frame_type,
+        int16_t data1,
+        int16_t data2,
+        int16_t data3,
+        int16_t data4,
+        double frame_timestamp);
+    ssize_t read_some(uint8_t *buffer, size_t buffer_size, double timeout_seconds);
+    bool read_exact(uint8_t *buffer, size_t buffer_size, double timeout_seconds);
+    static double now_seconds();
+    static uint8_t compute_hiwonder_checksum(const uint8_t *frame);
+    static bool is_supported_hiwonder_frame_type(uint8_t frame_type);
+    static bool is_probe_hiwonder_frame_type(int frame_type);
 };

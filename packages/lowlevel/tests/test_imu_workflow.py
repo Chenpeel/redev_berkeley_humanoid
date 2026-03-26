@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate, SamplingRate
+from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate, FrameType, SamplingRate
 from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     ImuStreamConfiguration,
     _build_probe_configurations,
@@ -92,9 +92,9 @@ class ImuWorkflowTests(unittest.TestCase):
 
         self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 115200))
 
-    def test_probe_hiwonder_accepts_valid_zero_frame(self) -> None:
+    def test_probe_hiwonder_accepts_meaningful_sensor_frame(self) -> None:
         imu = mock.Mock()
-        imu.read_frame.side_effect = [True]
+        imu.read_frame_type.side_effect = [FrameType.ANGLE]
 
         with mock.patch(
             "berkeley_humanoid_lite_lowlevel.workflows.imu.SerialImu",
@@ -104,6 +104,50 @@ class ImuWorkflowTests(unittest.TestCase):
             side_effect=[0.0, 0.0],
         ):
             self.assertTrue(
+                _probe_hiwonder(
+                    "/dev/ttyUSB0",
+                    baudrate=460800,
+                    timeout=0.01,
+                    probe_duration=0.5,
+                )
+            )
+
+        imu.close.assert_called_once()
+
+    def test_probe_hiwonder_ignores_time_frame_until_sensor_frame_arrives(self) -> None:
+        imu = mock.Mock()
+        imu.read_frame_type.side_effect = [FrameType.TIME, FrameType.ANGULAR_VELOCITY]
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.SerialImu",
+            return_value=imu,
+        ), mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.time.perf_counter",
+            side_effect=[0.0, 0.0, 0.1, 0.1],
+        ):
+            self.assertTrue(
+                _probe_hiwonder(
+                    "/dev/ttyUSB0",
+                    baudrate=460800,
+                    timeout=0.01,
+                    probe_duration=0.5,
+                )
+            )
+
+        imu.close.assert_called_once()
+
+    def test_probe_hiwonder_rejects_time_only_stream(self) -> None:
+        imu = mock.Mock()
+        imu.read_frame_type.side_effect = [FrameType.TIME, None]
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.SerialImu",
+            return_value=imu,
+        ), mock.patch(
+            "berkeley_humanoid_lite_lowlevel.workflows.imu.time.perf_counter",
+            side_effect=[0.0, 0.0, 0.2, 0.6],
+        ):
+            self.assertFalse(
                 _probe_hiwonder(
                     "/dev/ttyUSB0",
                     baudrate=460800,

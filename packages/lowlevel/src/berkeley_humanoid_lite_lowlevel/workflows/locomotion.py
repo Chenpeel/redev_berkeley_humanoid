@@ -14,6 +14,14 @@ from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandS
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_diagnostics import LocomotionDiagnosticSnapshot
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import build_leg_locomotion_robot_specification
+from berkeley_humanoid_lite_lowlevel.workflows.imu import (
+    DEFAULT_IMU_BAUDRATE,
+    DEFAULT_IMU_PROBE_DURATION,
+    DEFAULT_IMU_PROTOCOL,
+    DEFAULT_IMU_SERIAL_DEVICE,
+    DEFAULT_IMU_TIMEOUT,
+    resolve_imu_stream_configuration,
+)
 
 if TYPE_CHECKING:
     from berkeley_humanoid_lite_lowlevel.policy.configuration import PolicyDeploymentConfiguration
@@ -22,6 +30,7 @@ if TYPE_CHECKING:
 DEFAULT_GAMEPAD_UDP_HOST = "127.0.0.1"
 DEFAULT_GAMEPAD_UDP_PORT = 10011
 DEFAULT_GAMEPAD_UDP_RATE_HZ = 20.0
+DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT = 2.0
 
 
 def _format_array(values: np.ndarray) -> str:
@@ -101,6 +110,31 @@ def encode_gamepad_command_packet(command: LocomotionCommand) -> bytes:
     )
 
 
+def resolve_locomotion_imu_configuration(
+    *,
+    protocol: str = DEFAULT_IMU_PROTOCOL,
+    device: str = DEFAULT_IMU_SERIAL_DEVICE,
+    baudrate: str | int | None = DEFAULT_IMU_BAUDRATE,
+    timeout: float = DEFAULT_IMU_TIMEOUT,
+    probe_duration: float = DEFAULT_IMU_PROBE_DURATION,
+):
+    """解析 Python locomotion runtime 可直接使用的 IMU 配置。"""
+    configuration = resolve_imu_stream_configuration(
+        protocol=protocol,
+        device=device,
+        baudrate=baudrate,
+        timeout=timeout,
+        probe_duration=probe_duration,
+    )
+    if configuration.protocol != "hiwonder":
+        raise ValueError(
+            "Python locomotion runtime currently supports only HiWonder USB IMU streams. "
+            f"Detected protocol={configuration.protocol!r} on {configuration.device}. "
+            "Pass --imu-protocol hiwonder or switch to the HiWonder USB IMU."
+        )
+    return configuration
+
+
 def create_locomotion_robot(
     *,
     left_leg_bus: str = "can0",
@@ -108,6 +142,11 @@ def create_locomotion_robot(
     enable_imu: bool = True,
     enable_command_source: bool = True,
     dry_run: bool = False,
+    imu_device: str = "/dev/ttyUSB0",
+    imu_baudrate: int | None = None,
+    imu_timeout: float = DEFAULT_IMU_TIMEOUT,
+    imu_wait_timeout: float = DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT,
+    require_imu_ready: bool = True,
 ):
     from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
 
@@ -120,6 +159,11 @@ def create_locomotion_robot(
         enable_imu=enable_imu,
         enable_command_source=enable_command_source,
         dry_run=dry_run,
+        imu_device=imu_device,
+        imu_baudrate=imu_baudrate,
+        imu_read_timeout=imu_timeout,
+        imu_wait_timeout=imu_wait_timeout,
+        require_imu_ready=require_imu_ready,
     )
 
 
@@ -133,6 +177,11 @@ def run_locomotion_loop(
     debug_every: int = 25,
     debug_imu: bool = False,
     debug_imu_every: int = 25,
+    imu_device: str = "/dev/ttyUSB0",
+    imu_baudrate: int | None = None,
+    imu_timeout: float = DEFAULT_IMU_TIMEOUT,
+    imu_wait_timeout: float = DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT,
+    require_imu_ready: bool = True,
 ) -> None:
     from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
@@ -140,6 +189,8 @@ def run_locomotion_loop(
         raise ValueError("debug_every must be positive")
     if debug_imu_every <= 0:
         raise ValueError("debug_imu_every must be positive")
+    if imu_wait_timeout < 0.0:
+        raise ValueError("imu_wait_timeout must be non-negative")
 
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
     if dry_run:
@@ -148,6 +199,10 @@ def run_locomotion_loop(
         print(f"Debug snapshots enabled every {debug_every} policy steps")
     if debug_imu:
         print(f"IMU debug enabled every {debug_imu_every} policy steps")
+    if require_imu_ready:
+        print(f"IMU ready check enabled with timeout {imu_wait_timeout:g}s")
+    else:
+        print("IMU ready check disabled")
 
     controller = PolicyController(configuration)
     controller.load_policy()
@@ -155,16 +210,23 @@ def run_locomotion_loop(
 
     robot = None
     observation_stream = None
+    startup_completed = False
     try:
         robot = create_locomotion_robot(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
             dry_run=dry_run,
+            imu_device=imu_device,
+            imu_baudrate=imu_baudrate,
+            imu_timeout=imu_timeout,
+            imu_wait_timeout=imu_wait_timeout,
+            require_imu_ready=require_imu_ready,
         )
         observation_stream = create_observation_stream(configuration)
         if not dry_run:
             robot.enter_damping_mode()
         observations = robot.reset()
+        startup_completed = True
         step_index = 0
         previous_state = None
         previous_requested_state = None
@@ -205,7 +267,10 @@ def run_locomotion_loop(
         if observation_stream is not None:
             observation_stream.stop()
         if robot is not None:
-            robot.stop()
+            if startup_completed:
+                robot.stop()
+            else:
+                robot.shutdown()
 
 
 def run_idle_stream(

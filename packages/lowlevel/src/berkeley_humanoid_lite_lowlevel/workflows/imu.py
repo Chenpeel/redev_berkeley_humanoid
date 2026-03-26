@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import serial
 
-from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate, SamplingRate, SerialImu
+from berkeley_humanoid_lite_lowlevel.robot.imu import Baudrate, FrameType, SamplingRate, SerialImu
 from berkeley_humanoid_lite_lowlevel.sensors import SerialOrientationStream, discover_orientation_devices
 from berkeley_humanoid_lite_lowlevel.sensors.orientation import AUTO_DETECT_SERIAL_DEVICE
 
@@ -18,7 +18,17 @@ DEFAULT_IMU_PROBE_DURATION = 0.5
 _PROTOCOL_AUTO = "auto"
 _PROTOCOL_HIWONDER = "hiwonder"
 _PROTOCOL_PACKET = "packet"
-SUPPORTED_IMU_PROTOCOLS = (_PROTOCOL_AUTO, _PROTOCOL_HIWONDER, _PROTOCOL_PACKET)
+SUPPORTED_IMU_PROTOCOLS = (
+    _PROTOCOL_AUTO, _PROTOCOL_HIWONDER, _PROTOCOL_PACKET)
+_HIWONDER_PROBE_FRAME_TYPES = frozenset(
+    {
+        FrameType.ACCELERATION,
+        FrameType.ANGULAR_VELOCITY,
+        FrameType.ANGLE,
+        FrameType.MAGNETIC_FIELD,
+        FrameType.QUATERNION,
+    }
+)
 
 _HIWONDER_BAUDRATE_CODES = {
     4800: Baudrate.BAUD_4800,
@@ -30,7 +40,8 @@ _HIWONDER_BAUDRATE_CODES = {
     230400: Baudrate.BAUD_230400,
     460800: Baudrate.BAUD_460800,
 }
-_HIWONDER_DEFAULT_BAUDRATES = (460800, 115200, 230400, 9600, 19200, 38400, 57600)
+_HIWONDER_DEFAULT_BAUDRATES = (
+    460800, 115200, 230400, 9600, 19200, 38400, 57600)
 _PACKET_DEFAULT_BAUDRATES = (1_000_000,)
 _HIWONDER_SAMPLING_RATE_CODES = {
     0.2: SamplingRate.RATE_0_2_HZ,
@@ -115,8 +126,10 @@ def normalize_hiwonder_baudrate(baudrate: int) -> int:
     if baudrate in _HIWONDER_BAUDRATE_CODES:
         return _HIWONDER_BAUDRATE_CODES[baudrate]
 
-    supported_values = ", ".join(str(value) for value in _HIWONDER_BAUDRATE_CODES)
-    raise ValueError(f"Unsupported HiWonder baudrate: {baudrate}. Supported values: {supported_values}")
+    supported_values = ", ".join(str(value)
+                                 for value in _HIWONDER_BAUDRATE_CODES)
+    raise ValueError(
+        f"Unsupported HiWonder baudrate: {baudrate}. Supported values: {supported_values}")
 
 
 def normalize_hiwonder_sampling_rate(rate_hz: float | int) -> int:
@@ -148,7 +161,8 @@ def resolve_hiwonder_output_content(
 ) -> dict[str, bool]:
     if profile not in _HIWONDER_OUTPUT_PROFILES:
         supported_profiles = ", ".join(SUPPORTED_HIWONDER_OUTPUT_PROFILES)
-        raise ValueError(f"Unsupported HiWonder output profile: {profile}. Supported profiles: {supported_profiles}")
+        raise ValueError(
+            f"Unsupported HiWonder output profile: {profile}. Supported profiles: {supported_profiles}")
 
     output_content = dict(_HIWONDER_OUTPUT_PROFILES[profile])
     explicit_values = {
@@ -223,7 +237,8 @@ def _probe_hiwonder(device: str, *, baudrate: int, timeout: float, probe_duratio
     started_at = time.perf_counter()
     try:
         while time.perf_counter() - started_at < probe_duration:
-            if imu.read_frame():
+            frame_type = imu.read_frame_type()
+            if frame_type in _HIWONDER_PROBE_FRAME_TYPES:
                 return True
     finally:
         imu.close()
@@ -359,7 +374,8 @@ def configure_hiwonder_output(
         baudrate=normalize_hiwonder_baudrate(configuration.baudrate),
         read_timeout=timeout,
     )
-    effective_baudrate = configuration.baudrate if target_baudrate is None else int(target_baudrate)
+    effective_baudrate = configuration.baudrate if target_baudrate is None else int(
+        target_baudrate)
     try:
         imu.unlock()
         time.sleep(0.1)

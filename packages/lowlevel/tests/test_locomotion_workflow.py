@@ -13,6 +13,7 @@ from berkeley_humanoid_lite_lowlevel.robot.command_source import LocomotionComma
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_diagnostics import build_locomotion_diagnostic_snapshot
 from berkeley_humanoid_lite_lowlevel.workflows import locomotion as locomotion_workflow
+from berkeley_humanoid_lite_lowlevel.workflows.imu import ImuStreamConfiguration
 from berkeley_humanoid_lite_lowlevel.workflows.locomotion import encode_gamepad_command_packet
 
 
@@ -101,6 +102,66 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(specification)
         self.assertTrue(all(address.bus_name == "can2" for address in specification.joint_addresses[:6]))
         self.assertTrue(all(address.bus_name == "can3" for address in specification.joint_addresses[6:]))
+
+    def test_create_locomotion_robot_passes_explicit_imu_settings(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeRobot:
+            def __init__(self, specification=None, **kwargs: object) -> None:
+                captured["specification"] = specification
+                captured.update(kwargs)
+
+        fake_robot_module = ModuleType("berkeley_humanoid_lite_lowlevel.robot")
+        fake_robot_module.LocomotionRobot = FakeRobot
+
+        with mock.patch.dict(sys.modules, {"berkeley_humanoid_lite_lowlevel.robot": fake_robot_module}):
+            locomotion_workflow.create_locomotion_robot(
+                left_leg_bus="can2",
+                right_leg_bus="can3",
+                imu_device="/dev/ttyUSB9",
+                imu_baudrate=123,
+                imu_timeout=0.2,
+                imu_wait_timeout=1.5,
+                require_imu_ready=False,
+            )
+
+        self.assertEqual(captured["imu_device"], "/dev/ttyUSB9")
+        self.assertEqual(captured["imu_baudrate"], 123)
+        self.assertEqual(captured["imu_read_timeout"], 0.2)
+        self.assertEqual(captured["imu_wait_timeout"], 1.5)
+        self.assertFalse(captured["require_imu_ready"])
+
+    def test_resolve_locomotion_imu_configuration_accepts_hiwonder_stream(self) -> None:
+        with mock.patch.object(
+            locomotion_workflow,
+            "resolve_imu_stream_configuration",
+            return_value=ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800),
+        ) as resolver:
+            configuration = locomotion_workflow.resolve_locomotion_imu_configuration(
+                protocol="auto",
+                device="auto",
+                baudrate="auto",
+                timeout=0.02,
+                probe_duration=0.6,
+            )
+
+        self.assertEqual(configuration, ImuStreamConfiguration("hiwonder", "/dev/ttyUSB0", 460800))
+        resolver.assert_called_once_with(
+            protocol="auto",
+            device="auto",
+            baudrate="auto",
+            timeout=0.02,
+            probe_duration=0.6,
+        )
+
+    def test_resolve_locomotion_imu_configuration_rejects_packet_stream(self) -> None:
+        with mock.patch.object(
+            locomotion_workflow,
+            "resolve_imu_stream_configuration",
+            return_value=ImuStreamConfiguration("packet", "/dev/ttyACM0", 1_000_000),
+        ):
+            with self.assertRaisesRegex(ValueError, "HiWonder USB IMU streams"):
+                locomotion_workflow.resolve_locomotion_imu_configuration()
 
     def test_check_locomotion_connection_supports_custom_leg_buses(self) -> None:
         class FakeRobot:
@@ -344,6 +405,133 @@ class LocomotionWorkflowTests(unittest.TestCase):
 
         self.assertFalse(enter_damping_mode_called)
         self.assertIn("Dry-run enabled", stdout.getvalue())
+
+    def test_run_locomotion_loop_passes_imu_settings_to_robot_factory(self) -> None:
+        fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
+        fake_policy_module.PolicyController = FakePolicyController
+
+        class FakeRobot:
+            state = LocomotionControlState.IDLE
+            requested_state = LocomotionControlState.INVALID
+
+            def enter_damping_mode(self) -> None:
+                return None
+
+            def reset(self) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def step(self, actions: np.ndarray) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def create_imu_debug_line(self) -> str | None:
+                return None
+
+            def stop(self) -> None:
+                return None
+
+        class FakeObservationStream:
+            def send_numpy(self, observations: np.ndarray) -> None:
+                raise KeyboardInterrupt()
+
+            def stop(self) -> None:
+                return None
+
+        configuration = SimpleNamespace(
+            policy_dt=0.02,
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, 0.0],
+        )
+
+        with mock.patch.dict(
+            "sys.modules",
+            {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
+        ):
+            with mock.patch.object(
+                locomotion_workflow,
+                "create_locomotion_robot",
+                return_value=FakeRobot(),
+            ) as factory:
+                with mock.patch.object(
+                    locomotion_workflow,
+                    "create_observation_stream",
+                    return_value=FakeObservationStream(),
+                ):
+                    locomotion_workflow.run_locomotion_loop(
+                        configuration,
+                        dry_run=True,
+                        imu_device="/dev/ttyUSB9",
+                        imu_baudrate=6,
+                        imu_timeout=0.2,
+                        imu_wait_timeout=1.5,
+                        require_imu_ready=False,
+                    )
+
+        factory.assert_called_once_with(
+            left_leg_bus="can0",
+            right_leg_bus="can1",
+            dry_run=True,
+            imu_device="/dev/ttyUSB9",
+            imu_baudrate=6,
+            imu_timeout=0.2,
+            imu_wait_timeout=1.5,
+            require_imu_ready=False,
+        )
+
+    def test_run_locomotion_loop_shutdowns_instead_of_waiting_for_second_ctrl_c_on_startup_failure(self) -> None:
+        fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
+        fake_policy_module.PolicyController = FakePolicyController
+
+        class FakeRobot:
+            def __init__(self) -> None:
+                self.enter_damping_mode_called = False
+                self.stop_called = False
+                self.shutdown_called = False
+
+            def enter_damping_mode(self) -> None:
+                self.enter_damping_mode_called = True
+
+            def reset(self) -> np.ndarray:
+                raise RuntimeError("IMU did not become ready before locomotion reset")
+
+            def stop(self) -> None:
+                self.stop_called = True
+
+            def shutdown(self) -> None:
+                self.shutdown_called = True
+
+        class FakeObservationStream:
+            def stop(self) -> None:
+                return None
+
+        configuration = SimpleNamespace(
+            policy_dt=0.02,
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, 0.0],
+        )
+        fake_robot = FakeRobot()
+
+        with mock.patch.dict(
+            "sys.modules",
+            {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
+        ):
+            with mock.patch.object(
+                locomotion_workflow,
+                "create_locomotion_robot",
+                return_value=fake_robot,
+            ):
+                with mock.patch.object(
+                    locomotion_workflow,
+                    "create_observation_stream",
+                    return_value=FakeObservationStream(),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "IMU did not become ready"):
+                        locomotion_workflow.run_locomotion_loop(configuration)
+
+        self.assertTrue(fake_robot.enter_damping_mode_called)
+        self.assertTrue(fake_robot.shutdown_called)
+        self.assertFalse(fake_robot.stop_called)
 
 
 if __name__ == "__main__":

@@ -32,10 +32,17 @@ class LocomotionRobot:
         enable_imu: bool = True,
         enable_command_source: bool = True,
         dry_run: bool = False,
+        imu_device: str = "/dev/ttyUSB0",
+        imu_baudrate: int | None = None,
+        imu_read_timeout: float = 0.01,
+        imu_wait_timeout: float = 2.0,
+        require_imu_ready: bool = True,
     ) -> None:
         self.specification = specification or build_default_locomotion_robot_specification()
         self.calibration_store = calibration_store or CalibrationStore()
         self.dry_run = dry_run
+        self.imu_wait_timeout = float(imu_wait_timeout)
+        self.require_imu_ready = require_imu_ready
 
         position_offsets = self.calibration_store.load_position_offsets(
             self.specification.joint_count)
@@ -44,8 +51,12 @@ class LocomotionRobot:
             position_offsets=position_offsets,
         )
 
+        effective_imu_baudrate = self.specification.imu_baudrate if imu_baudrate is None else int(imu_baudrate)
         self.imu = SerialImu(
-            baudrate=self.specification.imu_baudrate) if enable_imu else None
+            port=imu_device,
+            baudrate=effective_imu_baudrate,
+            read_timeout=imu_read_timeout,
+        ) if enable_imu else None
         if self.imu is not None:
             self.imu.run_forever()
 
@@ -123,6 +134,22 @@ class LocomotionRobot:
             return LocomotionCommand.zero()
         return self.command_source.snapshot()
 
+    def _wait_for_imu_ready(self) -> None:
+        if self.imu is None or not self.require_imu_ready:
+            return
+        if self.imu.wait_until_ready(timeout=self.imu_wait_timeout):
+            return
+
+        snapshot = self.imu.snapshot()
+        raise RuntimeError(
+            "IMU did not become ready before locomotion reset. "
+            "Expected both quaternion and angular velocity frames from the HiWonder IMU. "
+            f"timeout={self.imu_wait_timeout:g}s "
+            f"quaternion_ready={snapshot.quaternion_ready} "
+            f"angular_velocity_ready={snapshot.angular_velocity_ready} "
+            f"last_timestamp={snapshot.timestamp:.6f}"
+        )
+
     def get_observations(self) -> np.ndarray:
         imu_quaternion = self.lowlevel_states[0:4]
         imu_angular_velocity = self.lowlevel_states[4:7]
@@ -137,8 +164,9 @@ class LocomotionRobot:
                                                  self.specification.joint_count * 2 + 1:]
 
         if self.imu is not None:
-            imu_quaternion[:] = self.imu.quaternion[:]
-            imu_angular_velocity[:] = np.deg2rad(self.imu.angular_velocity[:])
+            imu_snapshot = self.imu.snapshot()
+            imu_quaternion[:] = imu_snapshot.quaternion_wxyz
+            imu_angular_velocity[:] = np.deg2rad(imu_snapshot.angular_velocity_deg_s)
         else:
             imu_quaternion[:] = np.array(
                 [1.0, 0.0, 0.0, 0.0], dtype=np.float32)
@@ -157,6 +185,7 @@ class LocomotionRobot:
         return self.lowlevel_states
 
     def reset(self) -> np.ndarray:
+        self._wait_for_imu_ready()
         self.actuators.refresh_measurements()
         return self.get_observations()
 
@@ -218,9 +247,10 @@ class LocomotionRobot:
     def create_imu_debug_line(self) -> str | None:
         if self.imu is None:
             return None
+        imu_snapshot = self.imu.snapshot()
         return format_imu_debug_line(
-            quaternion_wxyz=self.imu.quaternion,
-            angular_velocity_deg_s=self.imu.angular_velocity,
+            quaternion_wxyz=imu_snapshot.quaternion_wxyz,
+            angular_velocity_deg_s=imu_snapshot.angular_velocity_deg_s,
         )
 
     def read_joint_positions(self) -> np.ndarray:

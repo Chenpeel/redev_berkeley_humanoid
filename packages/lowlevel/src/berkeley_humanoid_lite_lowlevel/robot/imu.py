@@ -1,12 +1,13 @@
 # Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
-import time
 import struct
 import threading
+import time
+from dataclasses import dataclass
 
 import numpy as np
-from loop_rate_limiters import RateLimiter
 import serial
+from loop_rate_limiters import RateLimiter
 
 
 class ImuRegisters:
@@ -158,6 +159,21 @@ class Baudrate:
     # BAUD_921600     = 0x09
 
 
+@dataclass(frozen=True)
+class SerialImuSnapshot:
+    timestamp: float
+    quaternion_wxyz: np.ndarray
+    angular_velocity_deg_s: np.ndarray
+    angle_xyz_deg: np.ndarray
+    acceleration_xyz_g: np.ndarray
+    quaternion_ready: bool
+    angular_velocity_ready: bool
+
+    @property
+    def ready(self) -> bool:
+        return self.quaternion_ready and self.angular_velocity_ready
+
+
 class SerialImu:
     """
     Driver for the HiWonder IM10A 10-axis USB IMU.
@@ -173,6 +189,17 @@ class SerialImu:
     automatically be locked.
     """
     FRAME_LENGTH = 11
+    _SYNC_BYTE = 0x55
+    _SUPPORTED_FRAME_TYPES = frozenset(
+        {
+            FrameType.TIME,
+            FrameType.ACCELERATION,
+            FrameType.ANGULAR_VELOCITY,
+            FrameType.ANGLE,
+            FrameType.MAGNETIC_FIELD,
+            FrameType.QUATERNION,
+        }
+    )
 
     @staticmethod
     def baud_to_int(baudrate: int) -> int:
@@ -218,17 +245,22 @@ class SerialImu:
 
         self.is_stopped: threading.Event = threading.Event()
         self.is_stopped.clear()
+        self.thread: threading.Thread | None = None
+        self._state_lock = threading.Lock()
+        self._quaternion_ready = False
+        self._angular_velocity_ready = False
+        self._read_buffer = bytearray()
 
         # === IMU readings ===
         # seconds
         self.timestamp: float = 0.0
         # Celcius degree
         self.temperature: float = 0.0
-        # (x, y, z) m/s^2
+        # (x, y, z) g
         self.acceleration: np.ndarray = np.zeros(3, dtype=np.float32)
         # (x, y, z) deg/s
         self.angular_velocity: np.ndarray = np.zeros(3, dtype=np.float32)
-        # (yaw, pitch, roll) deg
+        # (x, y, z) deg
         self.angle: np.ndarray = np.zeros(3, dtype=np.float32)
         # (x, y, z) μT
         self.magnetic_field: np.ndarray = np.zeros(3, dtype=np.float32)
@@ -237,63 +269,130 @@ class SerialImu:
 
         # self.__debug_last_time: float = time.perf_counter_ns()
 
-    def __read_frame(self) -> bool:
-        """
-        Parse a frame from the serial port.
-        """
-        start = self.ser.read(1)
-        if len(start) != 1:
-            return False
-        start, = struct.unpack("<B", start)
-        if start != 0x55:
-            return False
-        frame = self.ser.read(self.FRAME_LENGTH - 1)
-        if len(frame) != self.FRAME_LENGTH - 1:
-            return False
+    @classmethod
+    def _compute_checksum(cls, frame: bytes | bytearray) -> int:
+        return sum(frame[: cls.FRAME_LENGTH - 1]) & 0xFF
 
-        frame_type, data1, data2, data3, data4, sumcrc = struct.unpack("<BhhhhB", frame)
-
+    def _apply_frame(
+        self,
+        frame_type: int,
+        data1: int,
+        data2: int,
+        data3: int,
+        data4: int,
+        *,
+        frame_timestamp: float,
+    ) -> None:
         # print(type, data1, data2, data3, data4, sumcrc)
         if frame_type == FrameType.TIME:
             # 时间帧对当前调试输出没有直接用途，命中合法帧即可。
-            pass
+            with self._state_lock:
+                self.timestamp = frame_timestamp
+            return
 
-        elif frame_type == FrameType.ACCELERATION:
-            self.acceleration[0] = data1 * 16.0 / 32768.0  # g
-            self.acceleration[1] = data2 * 16.0 / 32768.0  # g
-            self.acceleration[2] = data3 * 16.0 / 32768.0  # g
-            self.temperature = data4 / 100.0  # Celsius
+        if frame_type == FrameType.ACCELERATION:
+            with self._state_lock:
+                self.acceleration[0] = data1 * 16.0 / 32768.0  # g
+                self.acceleration[1] = data2 * 16.0 / 32768.0  # g
+                self.acceleration[2] = data3 * 16.0 / 32768.0  # g
+                self.temperature = data4 / 100.0  # Celsius
+                self.timestamp = frame_timestamp
+            return
 
-        elif frame_type == FrameType.ANGULAR_VELOCITY:
-            self.angular_velocity[0] = data1 * 2000.0 / 32768.0  # deg/s
-            self.angular_velocity[1] = data2 * 2000.0 / 32768.0  # deg/s
-            self.angular_velocity[2] = data3 * 2000.0 / 32768.0  # deg/s
+        if frame_type == FrameType.ANGULAR_VELOCITY:
+            with self._state_lock:
+                self.angular_velocity[0] = data1 * 2000.0 / 32768.0  # deg/s
+                self.angular_velocity[1] = data2 * 2000.0 / 32768.0  # deg/s
+                self.angular_velocity[2] = data3 * 2000.0 / 32768.0  # deg/s
+                self.timestamp = frame_timestamp
+                self._angular_velocity_ready = True
 
             # for debugging
             # print(f"frequency: {1.0 / ((time.perf_counter_ns() - self.__debug_last_time) / 1e9)} Hz")
             # self.__debug_last_time = time.perf_counter_ns()
+            return
 
-        elif frame_type == FrameType.ANGLE:
-            self.angle[0] = data1 * 180.0 / 32768.0  # deg
-            self.angle[1] = data2 * 180.0 / 32768.0  # deg
-            self.angle[2] = data3 * 180.0 / 32768.0  # deg
+        if frame_type == FrameType.ANGLE:
+            with self._state_lock:
+                self.angle[0] = data1 * 180.0 / 32768.0  # deg
+                self.angle[1] = data2 * 180.0 / 32768.0  # deg
+                self.angle[2] = data3 * 180.0 / 32768.0  # deg
+                self.timestamp = frame_timestamp
+            return
 
-        elif frame_type == FrameType.MAGNETIC_FIELD:
-            self.magnetic_field[0] = data1 * 1.0 / 32768.0
-            self.magnetic_field[1] = data2 * 1.0 / 32768.0
-            self.magnetic_field[2] = data3 * 1.0 / 32768.0
+        if frame_type == FrameType.MAGNETIC_FIELD:
+            with self._state_lock:
+                self.magnetic_field[0] = data1 * 1.0 / 32768.0
+                self.magnetic_field[1] = data2 * 1.0 / 32768.0
+                self.magnetic_field[2] = data3 * 1.0 / 32768.0
+                self.timestamp = frame_timestamp
+            return
 
-        elif frame_type == FrameType.QUATERNION:
-            self.quaternion[0] = data1 * 1.0 / 32768.0
-            self.quaternion[1] = data2 * 1.0 / 32768.0
-            self.quaternion[2] = data3 * 1.0 / 32768.0
-            self.quaternion[3] = data4 * 1.0 / 32768.0
+        if frame_type == FrameType.QUATERNION:
+            with self._state_lock:
+                self.quaternion[0] = data1 * 1.0 / 32768.0
+                self.quaternion[1] = data2 * 1.0 / 32768.0
+                self.quaternion[2] = data3 * 1.0 / 32768.0
+                self.quaternion[3] = data4 * 1.0 / 32768.0
+                self.timestamp = frame_timestamp
+                self._quaternion_ready = True
 
-        return True
+    def _try_extract_frame_type_from_buffer(self) -> int | None:
+        while True:
+            sync_index = self._read_buffer.find(bytes((self._SYNC_BYTE,)))
+            if sync_index < 0:
+                self._read_buffer.clear()
+                return None
+            if sync_index > 0:
+                del self._read_buffer[:sync_index]
+
+            if len(self._read_buffer) < self.FRAME_LENGTH:
+                return None
+
+            candidate = bytes(self._read_buffer[: self.FRAME_LENGTH])
+            if self._compute_checksum(candidate) != candidate[-1]:
+                # 只前移 1 字节，允许在坏帧内部重新找到下一个同步头。
+                del self._read_buffer[0]
+                continue
+
+            frame_type = candidate[1]
+            if frame_type not in self._SUPPORTED_FRAME_TYPES:
+                del self._read_buffer[0]
+                continue
+
+            _, frame_type, data1, data2, data3, data4, _sumcrc = struct.unpack("<BBhhhhB", candidate)
+            del self._read_buffer[: self.FRAME_LENGTH]
+            self._apply_frame(
+                frame_type,
+                data1,
+                data2,
+                data3,
+                data4,
+                frame_timestamp=time.perf_counter(),
+            )
+            return frame_type
+
+    def __read_frame_type(self) -> int | None:
+        """
+        Parse a frame from the serial port and return its frame type.
+        """
+        while True:
+            frame_type = self._try_extract_frame_type_from_buffer()
+            if frame_type is not None:
+                return frame_type
+
+            chunk = self.ser.read(self.FRAME_LENGTH)
+            if not chunk:
+                return None
+            self._read_buffer.extend(chunk)
 
     def read_frame(self) -> bool:
         """读取一帧 IMU 数据。"""
-        return self.__read_frame()
+        return self.__read_frame_type() is not None
+
+    def read_frame_type(self) -> int | None:
+        """读取一帧 IMU 数据，并返回命中的帧类型。"""
+        return self.__read_frame_type()
 
     def run(self) -> None:
         """
@@ -301,7 +400,7 @@ class SerialImu:
         """
         self.start_time = time.time()
         while not self.is_stopped.is_set():
-            self.__read_frame()
+            self.__read_frame_type()
 
     def run_forever(self) -> None:
         """
@@ -314,7 +413,9 @@ class SerialImu:
         # Set thread priority to high
         try:
             import os
+
             import psutil
+
             process = psutil.Process(os.getpid())
             process.nice(0)  # Set process priority to high (-20 is highest, 19 is lowest)
         except (ImportError, PermissionError):
@@ -325,6 +426,52 @@ class SerialImu:
         Stop the IMU reading loop.
         """
         self.is_stopped.set()
+
+    def snapshot(self) -> SerialImuSnapshot:
+        with self._state_lock:
+            return SerialImuSnapshot(
+                timestamp=float(self.timestamp),
+                quaternion_wxyz=self.quaternion.copy(),
+                angular_velocity_deg_s=self.angular_velocity.copy(),
+                angle_xyz_deg=self.angle.copy(),
+                acceleration_xyz_g=self.acceleration.copy(),
+                quaternion_ready=self._quaternion_ready,
+                angular_velocity_ready=self._angular_velocity_ready,
+            )
+
+    def is_ready(
+        self,
+        *,
+        require_quaternion: bool = True,
+        require_angular_velocity: bool = True,
+    ) -> bool:
+        snapshot = self.snapshot()
+        if require_quaternion and not snapshot.quaternion_ready:
+            return False
+        if require_angular_velocity and not snapshot.angular_velocity_ready:
+            return False
+        return True
+
+    def wait_until_ready(
+        self,
+        *,
+        timeout: float,
+        require_quaternion: bool = True,
+        require_angular_velocity: bool = True,
+        poll_interval: float = 0.01,
+    ) -> bool:
+        if timeout < 0.0:
+            raise ValueError("timeout must be non-negative")
+        deadline = time.perf_counter() + timeout
+        while True:
+            if self.is_ready(
+                require_quaternion=require_quaternion,
+                require_angular_velocity=require_angular_velocity,
+            ):
+                return True
+            if time.perf_counter() >= deadline:
+                return False
+            time.sleep(poll_interval)
 
     def close(self) -> None:
         """关闭 IMU 串口。"""
@@ -462,9 +609,24 @@ if __name__ == "__main__":
 
     try:
         while True:
-            print(f"ax: {imu.acceleration[0]:.2f}\tay: {imu.acceleration[1]:.2f}\taz: {imu.acceleration[2]:.2f}", end="\t")
-            print(f"gx: {imu.angular_velocity[0]:.2f}\tgy: {imu.angular_velocity[1]:.2f}\tgz: {imu.angular_velocity[2]:.2f}", end="\t")
-            print(f"qw: {imu.quaternion[0]:.2f}\tqx: {imu.quaternion[1]:.2f}\tqy: {imu.quaternion[2]:.2f}\tqz: {imu.quaternion[3]:.2f}")
+            print(
+                f"ax: {imu.acceleration[0]:.2f}\t"
+                f"ay: {imu.acceleration[1]:.2f}\t"
+                f"az: {imu.acceleration[2]:.2f}",
+                end="\t",
+            )
+            print(
+                f"gx: {imu.angular_velocity[0]:.2f}\t"
+                f"gy: {imu.angular_velocity[1]:.2f}\t"
+                f"gz: {imu.angular_velocity[2]:.2f}",
+                end="\t",
+            )
+            print(
+                f"qw: {imu.quaternion[0]:.2f}\t"
+                f"qx: {imu.quaternion[1]:.2f}\t"
+                f"qy: {imu.quaternion[2]:.2f}\t"
+                f"qz: {imu.quaternion[3]:.2f}"
+            )
             rate.sleep()
     except KeyboardInterrupt:
         imu.stop()
