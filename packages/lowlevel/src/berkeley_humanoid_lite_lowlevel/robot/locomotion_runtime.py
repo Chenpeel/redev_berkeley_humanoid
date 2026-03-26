@@ -127,7 +127,10 @@ class LocomotionRobot:
 
         if self.imu is not None:
             imu_quaternion[:] = self.imu.quaternion[:]
+            print(f"IMU raw quaternion: {self.imu.quaternion[:]}")
             imu_angular_velocity[:] = np.deg2rad(self.imu.angular_velocity[:])
+            print(
+                f"IMU quaternion: {imu_quaternion}, angular velocity (rad/s): {imu_angular_velocity}")
         else:
             imu_quaternion[:] = np.array(
                 [1.0, 0.0, 0.0, 0.0], dtype=np.float32)
@@ -164,6 +167,8 @@ class LocomotionRobot:
             case LocomotionControlState.INITIALIZING:
                 print(f"init: {self.initialization_progress:.2f}")
                 if self.initialization_progress < 1.0:
+                    print(
+                        f"Initializing... {self.initialization_progress:.2f}")
                     self.initialization_progress = min(
                         self.initialization_progress + 0.01, 1.0)
                     self.actuators.joint_position_target[:] = linear_interpolate(
