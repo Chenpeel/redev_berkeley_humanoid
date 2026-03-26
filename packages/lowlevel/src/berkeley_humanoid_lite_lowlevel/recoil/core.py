@@ -469,8 +469,12 @@ class Bus:
     def write_velocity_target(self, device_id: int, value: float):
         self._write_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_VELOCITY_TARGET, value)
 
-    def read_velocity_measured(self, device_id: int) -> float | None:
-        return self._read_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_VELOCITY_MEASURED)
+    def read_velocity_measured(self, device_id: int, timeout=None) -> float | None:
+        return self._read_parameter_f32(
+            device_id,
+            Parameter.POSITION_CONTROLLER_VELOCITY_MEASURED,
+            timeout=timeout,
+        )
 
     def read_position_target(self, device_id: int) -> float | None:
         return self._read_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_POSITION_TARGET)
@@ -478,8 +482,12 @@ class Bus:
     def write_position_target(self, device_id: int, value: float):
         self._write_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_POSITION_TARGET, value)
 
-    def read_position_measured(self, device_id: int) -> float | None:
-        return self._read_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_POSITION_MEASURED)
+    def read_position_measured(self, device_id: int, timeout=None) -> float | None:
+        return self._read_parameter_f32(
+            device_id,
+            Parameter.POSITION_CONTROLLER_POSITION_MEASURED,
+            timeout=timeout,
+        )
 
     def read_torque_filter_alpha(self, device_id: int) -> float | None:
         return self._read_parameter_f32(device_id, Parameter.POSITION_CONTROLLER_TORQUE_FILTER_ALPHA)

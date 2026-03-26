@@ -5,7 +5,6 @@ import unittest
 from unittest import mock
 
 import numpy as np
-
 from berkeley_humanoid_lite_lowlevel.robot.joint_transport import LocomotionActuatorArray
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
     JointTransportAddress,
@@ -16,6 +15,8 @@ from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
 class _FakeBus:
     def __init__(self, bus_name: str, *, read_positions: dict[int, list[float]] | None = None) -> None:
         self.bus_name = bus_name
+        self.read_position_timeouts: list[float | None] = []
+        self.read_velocity_timeouts: list[float | None] = []
         self._read_positions = {
             device_id: list(values)
             for device_id, values in (read_positions or {}).items()
@@ -25,11 +26,16 @@ class _FakeBus:
             for device_id, values in (read_positions or {}).items()
         }
 
-    def read_position_measured(self, device_id: int) -> float:
+    def read_position_measured(self, device_id: int, timeout: float | None = None) -> float:
+        self.read_position_timeouts.append(timeout)
         values = self._read_positions[device_id]
         if len(values) > 1:
             return values.pop(0)
         return values[0]
+
+    def read_velocity_measured(self, device_id: int, timeout: float | None = None) -> float:
+        self.read_velocity_timeouts.append(timeout)
+        return 0.0
 
     def transmit_pdo_2(self, device_id: int, *, position_target: float, velocity_target: float) -> None:
         return None
@@ -140,6 +146,32 @@ class JointTransportTestCase(unittest.TestCase):
         np.testing.assert_allclose(
             actuators.joint_position_measured,
             np.array([0.25, -0.5], dtype=np.float32),
+        )
+
+    def test_refresh_measurements_uses_bounded_timeout_reads(self) -> None:
+        fake_bus = _FakeBus(
+            "can0",
+            read_positions={
+                1: [0.25],
+                2: [-0.5],
+            },
+        )
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.robot.joint_transport.recoil.Bus",
+            return_value=fake_bus,
+        ):
+            actuators = LocomotionActuatorArray(self._build_specification())
+
+        actuators.refresh_measurements()
+
+        self.assertEqual(
+            fake_bus.read_position_timeouts,
+            [actuators._MEASUREMENT_READ_TIMEOUT_S, actuators._MEASUREMENT_READ_TIMEOUT_S],
+        )
+        self.assertEqual(
+            fake_bus.read_velocity_timeouts,
+            [actuators._MEASUREMENT_READ_TIMEOUT_S, actuators._MEASUREMENT_READ_TIMEOUT_S],
         )
 
     def test_joint_and_raw_position_helpers_share_same_transform_formula(self) -> None:

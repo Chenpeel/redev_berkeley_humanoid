@@ -21,6 +21,7 @@ class LocomotionActuatorArray:
     """管理 locomotion 机器人的执行器通信和坐标变换。"""
 
     _ANGLE_PERIOD = float(2.0 * np.pi)
+    _MEASUREMENT_READ_TIMEOUT_S = 0.001
 
     def __init__(
         self,
@@ -103,6 +104,15 @@ class LocomotionActuatorArray:
 
         print("Motors enabled")
 
+    @staticmethod
+    def _call_with_optional_timeout(reader: object, device_id: int, *, timeout: float | None) -> float | None:
+        if not callable(reader):
+            return None
+        try:
+            return reader(device_id, timeout=timeout)
+        except TypeError:
+            return reader(device_id)
+
     def joint_to_raw_positions(self, joint_positions: np.ndarray) -> np.ndarray:
         joint_positions_array = np.asarray(joint_positions, dtype=np.float32)
         if joint_positions_array.shape != (self.specification.joint_count,):
@@ -149,7 +159,11 @@ class LocomotionActuatorArray:
     def refresh_measurements(self) -> bool:
         updated = False
         for index, joint in enumerate(self.joint_interfaces):
-            position_measured = joint.bus.read_position_measured(joint.device_id)
+            position_measured = self._call_with_optional_timeout(
+                joint.bus.read_position_measured,
+                joint.device_id,
+                timeout=self._MEASUREMENT_READ_TIMEOUT_S,
+            )
             if position_measured is None:
                 continue
 
@@ -161,7 +175,11 @@ class LocomotionActuatorArray:
 
             read_velocity_measured = getattr(joint.bus, "read_velocity_measured", None)
             if callable(read_velocity_measured):
-                velocity_measured = read_velocity_measured(joint.device_id)
+                velocity_measured = self._call_with_optional_timeout(
+                    read_velocity_measured,
+                    joint.device_id,
+                    timeout=self._MEASUREMENT_READ_TIMEOUT_S,
+                )
                 if velocity_measured is not None:
                     self.joint_velocity_measured[index] = (
                         velocity_measured * self.joint_axis_directions[index]
