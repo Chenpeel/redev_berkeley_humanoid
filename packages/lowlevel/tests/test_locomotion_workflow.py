@@ -11,6 +11,7 @@ from unittest import mock
 import numpy as np
 from berkeley_humanoid_lite_lowlevel.robot.command_source import LocomotionCommand
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_diagnostics import build_locomotion_diagnostic_snapshot
 from berkeley_humanoid_lite_lowlevel.workflows import locomotion as locomotion_workflow
 from berkeley_humanoid_lite_lowlevel.workflows.locomotion import encode_gamepad_command_packet
 
@@ -127,6 +128,7 @@ class LocomotionWorkflowTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.specification = SimpleNamespace(
                     joint_count=2,
+                    joint_names=("joint_0", "joint_1"),
                     initialization_positions=np.array([0.25, -0.35], dtype=np.float32),
                 )
                 self.actuators = SimpleNamespace(
@@ -152,6 +154,20 @@ class LocomotionWorkflowTests(unittest.TestCase):
                 observations = np.zeros((15,), dtype=np.float32)
                 observations[12:15] = np.array([0.3, -0.1, 0.2], dtype=np.float32)
                 return observations
+
+            def create_diagnostic_snapshot(self, observations: np.ndarray, actions: np.ndarray):
+                return build_locomotion_diagnostic_snapshot(
+                    specification=self.specification,
+                    state=self.state,
+                    requested_state=self.requested_state,
+                    command_velocity=observations[12:15],
+                    actions=actions,
+                    joint_position_target=self.actuators.joint_position_target,
+                    joint_position_measured=self.joint_position_measured,
+                    position_offsets=self.position_offsets,
+                    joint_axis_directions=self.joint_axis_directions,
+                    dry_run=False,
+                )
 
             def stop(self) -> None:
                 return None
@@ -201,6 +217,63 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertIn("[DEBUG] raw_meas", output)
         self.assertIn("[DEBUG] init_err", output)
         self.assertIn("[DEBUG] init_raw", output)
+        self.assertIn("[DEBUG] risk", output)
+
+    def test_run_locomotion_loop_dry_run_skips_motor_mode_setup(self) -> None:
+        fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
+        fake_policy_module.PolicyController = FakePolicyController
+        enter_damping_mode_called = False
+
+        class FakeRobot:
+            dry_run = True
+            state = LocomotionControlState.IDLE
+            requested_state = LocomotionControlState.INVALID
+
+            def enter_damping_mode(self) -> None:
+                nonlocal enter_damping_mode_called
+                enter_damping_mode_called = True
+
+            def reset(self) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def step(self, actions: np.ndarray) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def stop(self) -> None:
+                return None
+
+        class FakeObservationStream:
+            def send_numpy(self, observations: np.ndarray) -> None:
+                raise KeyboardInterrupt()
+
+            def stop(self) -> None:
+                return None
+
+        configuration = SimpleNamespace(
+            policy_dt=0.02,
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, 0.0],
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            with mock.patch.dict(
+                "sys.modules",
+                {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
+            ):
+                with mock.patch.object(locomotion_workflow, "create_locomotion_robot", return_value=FakeRobot()):
+                    with mock.patch.object(
+                        locomotion_workflow,
+                        "create_observation_stream",
+                        return_value=FakeObservationStream(),
+                    ):
+                        locomotion_workflow.run_locomotion_loop(
+                            configuration,
+                            dry_run=True,
+                        )
+
+        self.assertFalse(enter_damping_mode_called)
+        self.assertIn("Dry-run enabled", stdout.getvalue())
 
 
 if __name__ == "__main__":

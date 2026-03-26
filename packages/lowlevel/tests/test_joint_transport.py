@@ -118,6 +118,54 @@ class JointTransportTestCase(unittest.TestCase):
         actuators.synchronize()
         self.assertAlmostEqual(float(actuators.joint_position_measured[0]), -0.2, places=5)
 
+    def test_refresh_measurements_primes_joint_measurements_without_position_commands(self) -> None:
+        fake_bus = _FakeBus(
+            "can0",
+            read_positions={
+                1: [0.25],
+                2: [-0.5],
+            },
+        )
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.robot.joint_transport.recoil.Bus",
+            return_value=fake_bus,
+        ):
+            actuators = LocomotionActuatorArray(self._build_specification())
+
+        updated = actuators.refresh_measurements()
+
+        self.assertTrue(updated)
+        self.assertTrue(actuators.measurements_ready)
+        np.testing.assert_allclose(
+            actuators.joint_position_measured,
+            np.array([0.25, -0.5], dtype=np.float32),
+        )
+
+    def test_joint_and_raw_position_helpers_share_same_transform_formula(self) -> None:
+        fake_bus = _FakeBus(
+            "can0",
+            read_positions={
+                1: [0.0],
+                2: [0.0],
+            },
+        )
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.robot.joint_transport.recoil.Bus",
+            return_value=fake_bus,
+        ):
+            actuators = LocomotionActuatorArray(
+                self._build_specification(),
+                position_offsets=np.array([1.0, -2.0], dtype=np.float32),
+            )
+
+        joint_positions = np.array([0.5, -0.25], dtype=np.float32)
+        raw_positions = actuators.joint_to_raw_positions(joint_positions)
+
+        np.testing.assert_allclose(raw_positions, np.array([1.5, -2.25], dtype=np.float32))
+        np.testing.assert_allclose(actuators.raw_to_joint_positions(raw_positions), joint_positions)
+
 
 if __name__ == "__main__":
     unittest.main()

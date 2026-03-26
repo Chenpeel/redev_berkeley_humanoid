@@ -9,15 +9,12 @@ from .command_source import GamepadCommandSource, LocomotionCommand
 from .control_state import LocomotionControlState
 from .imu import SerialImu
 from .joint_transport import JointInterface, LocomotionActuatorArray
+from .locomotion_cycle import LocomotionCycleContext, advance_locomotion_cycle
+from .locomotion_diagnostics import LocomotionDiagnosticSnapshot, build_locomotion_diagnostic_snapshot
 from .locomotion_specification import (
     LocomotionRobotSpecification,
     build_default_locomotion_robot_specification,
 )
-
-
-def linear_interpolate(start: np.ndarray, end: np.ndarray, percentage: float) -> np.ndarray:
-    percentage = min(max(percentage, 0.0), 1.0)
-    return start * (1.0 - percentage) + end * percentage
 
 
 class LocomotionRobot:
@@ -30,9 +27,11 @@ class LocomotionRobot:
         *,
         enable_imu: bool = True,
         enable_command_source: bool = True,
+        dry_run: bool = False,
     ) -> None:
         self.specification = specification or build_default_locomotion_robot_specification()
         self.calibration_store = calibration_store or CalibrationStore()
+        self.dry_run = dry_run
 
         position_offsets = self.calibration_store.load_position_offsets(
             self.specification.joint_count)
@@ -57,6 +56,7 @@ class LocomotionRobot:
         self.state = LocomotionControlState.IDLE
         self.requested_state = LocomotionControlState.INVALID
         self.initialization_progress = 0.0
+        self.initialization_step = 0.01
         self.starting_positions = np.zeros(
             (self.specification.joint_count,), dtype=np.float32)
         self.lowlevel_states = np.zeros(
@@ -79,6 +79,8 @@ class LocomotionRobot:
         return self.actuators.joint_position_measured
 
     def enter_damping_mode(self) -> None:
+        if self.dry_run:
+            return
         self.actuators.configure_damping_mode()
 
     def shutdown(self) -> None:
@@ -87,7 +89,8 @@ class LocomotionRobot:
         if self.command_source is not None:
             self.command_source.stop()
 
-        self.actuators.set_idle_mode()
+        if not self.dry_run:
+            self.actuators.set_idle_mode()
         self.actuators.shutdown()
 
     def stop(self) -> None:
@@ -95,6 +98,10 @@ class LocomotionRobot:
             self.imu.stop()
         if self.command_source is not None:
             self.command_source.stop()
+
+        if self.dry_run:
+            self.shutdown()
+            return
 
         self.actuators.set_damping_mode()
         print("Entered damping mode. Press Ctrl+C again to exit.\n")
@@ -149,54 +156,63 @@ class LocomotionRobot:
         return self.lowlevel_states
 
     def reset(self) -> np.ndarray:
+        self.actuators.refresh_measurements()
         return self.get_observations()
 
     def step(self, actions: np.ndarray) -> np.ndarray:
-        match self.state:
-            case LocomotionControlState.IDLE:
-                self.actuators.joint_position_target[:
-                                                     ] = self.actuators.joint_position_measured[:]
+        if self.dry_run or not self.actuators.measurements_ready:
+            self.actuators.refresh_measurements()
 
-                if self.requested_state == LocomotionControlState.INITIALIZING:
-                    print("Switching to initialization mode")
-                    self.state = self.requested_state
-                    self.actuators.set_position_mode()
-                    self.starting_positions[:] = self.actuators.joint_position_target[:]
-                    self.initialization_progress = 0.0
+        result = advance_locomotion_cycle(
+            LocomotionCycleContext(
+                state=self.state,
+                requested_state=self.requested_state,
+                initialization_progress=self.initialization_progress,
+                initialization_step=self.initialization_step,
+                starting_positions=self.starting_positions,
+                measured_positions=self.actuators.joint_position_measured,
+                policy_actions=actions,
+                initialization_positions=self.specification.initialization_positions,
+            )
+        )
 
-            case LocomotionControlState.INITIALIZING:
-                print(f"init: {self.initialization_progress:.2f}")
-                if self.initialization_progress < 1.0:
-                    print(
-                        f"Initializing... {self.initialization_progress:.2f}")
-                    self.initialization_progress = min(
-                        self.initialization_progress + 0.01, 1.0)
-                    self.actuators.joint_position_target[:] = linear_interpolate(
-                        self.starting_positions,
-                        self.specification.initialization_positions,
-                        self.initialization_progress,
-                    )
-                elif self.requested_state == LocomotionControlState.POLICY_CONTROL:
-                    print("Switching to policy control mode")
-                    self.state = self.requested_state
-                elif self.requested_state == LocomotionControlState.IDLE:
-                    print("Switching to idle mode")
-                    self.state = self.requested_state
-                    self.actuators.set_damping_mode()
+        for message in result.messages:
+            print(message)
 
-            case LocomotionControlState.POLICY_CONTROL:
-                self.actuators.joint_position_target[:] = actions
+        self.state = result.state
+        self.initialization_progress = result.initialization_progress
+        self.starting_positions[:] = result.starting_positions
+        self.actuators.joint_position_target[:] = result.joint_position_target
 
-                if self.requested_state == LocomotionControlState.IDLE:
-                    print("Switching to idle mode")
-                    self.state = self.requested_state
-                    self.actuators.set_damping_mode()
+        if not self.dry_run:
+            if result.enter_position_mode:
+                self.actuators.set_position_mode()
+            if result.enter_damping_mode:
+                self.actuators.set_damping_mode()
+            self.actuators.synchronize()
 
-            case _:
-                self.state = LocomotionControlState.IDLE
-
-        self.actuators.synchronize()
         return self.get_observations()
+
+    def create_diagnostic_snapshot(
+        self,
+        observations: np.ndarray,
+        actions: np.ndarray,
+    ) -> LocomotionDiagnosticSnapshot:
+        joint_count = int(self.specification.joint_count)
+        command_start = 7 + joint_count * 2 + 1
+        command_velocity = observations[command_start: command_start + 3]
+        return build_locomotion_diagnostic_snapshot(
+            specification=self.specification,
+            state=self.state,
+            requested_state=self.requested_state,
+            command_velocity=command_velocity,
+            actions=actions,
+            joint_position_target=self.actuators.joint_position_target,
+            joint_position_measured=self.joint_position_measured,
+            position_offsets=self.position_offsets,
+            joint_axis_directions=self.joint_axis_directions,
+            dry_run=self.dry_run,
+        )
 
     def read_joint_positions(self) -> np.ndarray:
         return self.actuators.read_positions()

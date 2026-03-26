@@ -24,6 +24,11 @@ def main() -> None:
         help="Print locomotion state, command, action, and joint snapshots while running",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Read sensors and compute targets without sending motor position commands",
+    )
+    parser.add_argument(
         "--debug-every",
         type=int,
         default=25,
@@ -36,6 +41,7 @@ def main() -> None:
         configuration,
         left_leg_bus=arguments.left_leg_bus,
         right_leg_bus=arguments.right_leg_bus,
+        dry_run=arguments.dry_run,
         debug=arguments.debug,
         debug_every=arguments.debug_every,
     )

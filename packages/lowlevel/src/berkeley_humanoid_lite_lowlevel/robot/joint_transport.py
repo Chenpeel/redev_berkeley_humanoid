@@ -57,6 +57,7 @@ class LocomotionActuatorArray:
         self.joint_kp = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_kd = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.torque_limit = np.zeros((self.specification.joint_count,), dtype=np.float32)
+        self.measurements_ready = False
 
     def _unwrap_raw_position(self, index: int, position_measured: float) -> float:
         previous_position = float(self._raw_position_measured[index])
@@ -102,6 +103,18 @@ class LocomotionActuatorArray:
 
         print("Motors enabled")
 
+    def joint_to_raw_positions(self, joint_positions: np.ndarray) -> np.ndarray:
+        joint_positions_array = np.asarray(joint_positions, dtype=np.float32)
+        if joint_positions_array.shape != (self.specification.joint_count,):
+            raise ValueError("joint_positions 的长度必须与关节数一致。")
+        return (joint_positions_array + self.position_offsets) * self.joint_axis_directions
+
+    def raw_to_joint_positions(self, raw_positions: np.ndarray) -> np.ndarray:
+        raw_positions_array = np.asarray(raw_positions, dtype=np.float32)
+        if raw_positions_array.shape != (self.specification.joint_count,):
+            raise ValueError("raw_positions 的长度必须与关节数一致。")
+        return raw_positions_array * self.joint_axis_directions - self.position_offsets
+
     def set_position_mode(self) -> None:
         for joint in self.joint_interfaces:
             joint.bus.feed(joint.device_id)
@@ -116,22 +129,52 @@ class LocomotionActuatorArray:
             joint.bus.set_mode(joint.device_id, recoil.Mode.IDLE)
 
     def read_positions(self) -> np.ndarray:
-        positions = np.zeros((self.specification.joint_count,), dtype=np.float32)
+        positions = self.joint_position_measured.copy()
+        updated = False
         for index, joint in enumerate(self.joint_interfaces):
             position_measured = joint.bus.read_position_measured(joint.device_id)
+            if position_measured is None:
+                continue
+
             continuous_position = self._unwrap_raw_position(index, position_measured)
             positions[index] = (
                 continuous_position * self.joint_axis_directions[index]
             ) - self.position_offsets[index]
+            updated = True
+        if updated:
+            self.joint_position_measured[:] = positions
+            self.measurements_ready = True
         return positions
 
+    def refresh_measurements(self) -> bool:
+        updated = False
+        for index, joint in enumerate(self.joint_interfaces):
+            position_measured = joint.bus.read_position_measured(joint.device_id)
+            if position_measured is None:
+                continue
+
+            continuous_position = self._unwrap_raw_position(index, position_measured)
+            self.joint_position_measured[index] = (
+                continuous_position * self.joint_axis_directions[index]
+            ) - self.position_offsets[index]
+            updated = True
+
+            read_velocity_measured = getattr(joint.bus, "read_velocity_measured", None)
+            if callable(read_velocity_measured):
+                velocity_measured = read_velocity_measured(joint.device_id)
+                if velocity_measured is not None:
+                    self.joint_velocity_measured[index] = (
+                        velocity_measured * self.joint_axis_directions[index]
+                    )
+
+        if updated:
+            self.measurements_ready = True
+        return updated
+
     def _update_joint_pair(self, left_index: int, right_index: int) -> None:
-        position_target_left = (
-            self.joint_position_target[left_index] + self.position_offsets[left_index]
-        ) * self.joint_axis_directions[left_index]
-        position_target_right = (
-            self.joint_position_target[right_index] + self.position_offsets[right_index]
-        ) * self.joint_axis_directions[right_index]
+        raw_targets = self.joint_to_raw_positions(self.joint_position_target)
+        position_target_left = raw_targets[left_index]
+        position_target_right = raw_targets[right_index]
 
         left_joint = self.joint_interfaces[left_index]
         right_joint = self.joint_interfaces[right_index]
@@ -169,6 +212,13 @@ class LocomotionActuatorArray:
             self.joint_velocity_measured[right_index] = (
                 right_velocity_measured * self.joint_axis_directions[right_index]
             )
+        if (
+            left_position_measured is not None
+            or left_velocity_measured is not None
+            or right_position_measured is not None
+            or right_velocity_measured is not None
+        ):
+            self.measurements_ready = True
 
     def synchronize(self) -> None:
         for left_index, right_index in self.specification.mirrored_joint_pairs:

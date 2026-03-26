@@ -12,6 +12,7 @@ from loop_rate_limiters import RateLimiter
 
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource, LocomotionCommand
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_diagnostics import LocomotionDiagnosticSnapshot
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import build_leg_locomotion_robot_specification
 
 if TYPE_CHECKING:
@@ -37,41 +38,31 @@ def _format_control_state(value: object) -> str:
 def print_locomotion_debug_snapshot(
     *,
     step_index: int,
-    robot: object,
-    observations: np.ndarray,
-    actions: np.ndarray,
+    snapshot: LocomotionDiagnosticSnapshot,
 ) -> None:
-    joint_count = int(robot.specification.joint_count)
-    command_start = 7 + joint_count * 2 + 1
-    command_velocity = observations[command_start : command_start + 3]
-    targets = np.asarray(robot.actuators.joint_position_target, dtype=np.float32)
-    measured = np.asarray(robot.joint_position_measured, dtype=np.float32)
-    offsets = np.asarray(robot.position_offsets, dtype=np.float32)
-    directions = np.asarray(robot.joint_axis_directions, dtype=np.float32)
-    initialization_positions = np.asarray(robot.specification.initialization_positions, dtype=np.float32)
-    position_error = targets - measured
-    delta_to_initialization = initialization_positions - measured
-    raw_targets = (targets + offsets) * directions
-    raw_measured = (measured + offsets) * directions
-    raw_initialization_targets = (initialization_positions + offsets) * directions
-    raw_delta_to_initialization = raw_initialization_targets - raw_measured
+    position_error = snapshot.targets - snapshot.measured
 
     print(
         "[DEBUG] "
         f"step={step_index} "
-        f"state={_format_control_state(getattr(robot, 'state', None))} "
-        f"requested={_format_control_state(getattr(robot, 'requested_state', None))} "
-        f"cmd=({command_velocity[0]:+.3f}, {command_velocity[1]:+.3f}, {command_velocity[2]:+.3f})"
+        f"state={_format_control_state(snapshot.state)} "
+        f"requested={_format_control_state(snapshot.requested_state)} "
+        f"cmd=({snapshot.command_velocity[0]:+.3f}, {snapshot.command_velocity[1]:+.3f}, {snapshot.command_velocity[2]:+.3f})"
     )
-    print("[DEBUG] actions  =", _format_array(actions))
-    print("[DEBUG] targets  =", _format_array(targets))
-    print("[DEBUG] measured =", _format_array(measured))
+    print("[DEBUG] actions  =", _format_array(snapshot.actions))
+    print("[DEBUG] targets  =", _format_array(snapshot.targets))
+    print("[DEBUG] measured =", _format_array(snapshot.measured))
     print("[DEBUG] error    =", _format_array(position_error))
-    print("[DEBUG] offsets  =", _format_array(offsets))
-    print("[DEBUG] raw_tgt  =", _format_array(raw_targets))
-    print("[DEBUG] raw_meas =", _format_array(raw_measured))
-    print("[DEBUG] init_err =", _format_array(delta_to_initialization))
-    print("[DEBUG] init_raw =", _format_array(raw_delta_to_initialization))
+    print("[DEBUG] offsets  =", _format_array(snapshot.offsets))
+    print("[DEBUG] raw_tgt  =", _format_array(snapshot.raw_targets))
+    print("[DEBUG] raw_meas =", _format_array(snapshot.raw_measured))
+    print("[DEBUG] init_err =", _format_array(snapshot.delta_to_initialization))
+    print("[DEBUG] init_raw =", _format_array(snapshot.raw_delta_to_initialization))
+    print(
+        "[DEBUG] risk    =",
+        f"{snapshot.risk_joint_name} raw_init_delta={snapshot.risk_raw_delta_to_initialization:+.3f} "
+        f"dry_run={snapshot.dry_run}",
+    )
 
 
 def create_observation_stream(configuration: PolicyDeploymentConfiguration) -> UDP:
@@ -105,6 +96,7 @@ def create_locomotion_robot(
     right_leg_bus: str = "can1",
     enable_imu: bool = True,
     enable_command_source: bool = True,
+    dry_run: bool = False,
 ):
     from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
 
@@ -116,6 +108,7 @@ def create_locomotion_robot(
         specification=specification,
         enable_imu=enable_imu,
         enable_command_source=enable_command_source,
+        dry_run=dry_run,
     )
 
 
@@ -124,6 +117,7 @@ def run_locomotion_loop(
     *,
     left_leg_bus: str = "can0",
     right_leg_bus: str = "can1",
+    dry_run: bool = False,
     debug: bool = False,
     debug_every: int = 25,
 ) -> None:
@@ -133,6 +127,8 @@ def run_locomotion_loop(
         raise ValueError("debug_every must be positive")
 
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
+    if dry_run:
+        print("Dry-run enabled: observations and targets will be computed without sending motor commands")
     if debug:
         print(f"Debug snapshots enabled every {debug_every} policy steps")
 
@@ -146,9 +142,11 @@ def run_locomotion_loop(
         robot = create_locomotion_robot(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
+            dry_run=dry_run,
         )
         observation_stream = create_observation_stream(configuration)
-        robot.enter_damping_mode()
+        if not dry_run:
+            robot.enter_damping_mode()
         observations = robot.reset()
         step_index = 0
         previous_state = None
@@ -163,11 +161,13 @@ def run_locomotion_loop(
                     or robot.requested_state != previous_requested_state
                 )
                 if state_changed or step_index % debug_every == 0:
-                    print_locomotion_debug_snapshot(
-                        step_index=step_index,
-                        robot=robot,
+                    snapshot = robot.create_diagnostic_snapshot(
                         observations=observations,
                         actions=actions,
+                    )
+                    print_locomotion_debug_snapshot(
+                        step_index=step_index,
+                        snapshot=snapshot,
                     )
                 previous_state = robot.state
                 previous_requested_state = robot.requested_state

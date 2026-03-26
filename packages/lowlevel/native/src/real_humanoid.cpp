@@ -8,67 +8,73 @@
 #include "real_humanoid.h"
 #include "motor_controller_conf.h"
 
+namespace
+{
 
-namespace {
+  namespace fs = std::filesystem;
 
-namespace fs = std::filesystem;
-
-
-bool is_workspace_root(const fs::path &candidate) {
-  return fs::exists(candidate / "pyproject.toml") && fs::exists(candidate / "packages");
-}
-
-
-fs::path find_workspace_root(const fs::path &start_path) {
-  fs::path current = fs::absolute(start_path);
-  if (!fs::is_directory(current)) {
-    current = current.parent_path();
+  bool is_workspace_root(const fs::path &candidate)
+  {
+    return fs::exists(candidate / "pyproject.toml") && fs::exists(candidate / "packages");
   }
 
-  while (!current.empty()) {
-    if (is_workspace_root(current)) {
-      return current;
+  fs::path find_workspace_root(const fs::path &start_path)
+  {
+    fs::path current = fs::absolute(start_path);
+    if (!fs::is_directory(current))
+    {
+      current = current.parent_path();
     }
 
-    const fs::path parent = current.parent_path();
-    if (parent == current) {
-      break;
+    while (!current.empty())
+    {
+      if (is_workspace_root(current))
+      {
+        return current;
+      }
+
+      const fs::path parent = current.parent_path();
+      if (parent == current)
+      {
+        break;
+      }
+      current = parent;
     }
-    current = parent;
+
+    return {};
   }
 
-  return {};
-}
+  fs::path resolve_workspace_path(const fs::path &relative_path)
+  {
+    if (relative_path.is_absolute())
+    {
+      return relative_path;
+    }
 
+    const fs::path current_working_directory_path = fs::absolute(relative_path);
+    if (fs::exists(current_working_directory_path))
+    {
+      return current_working_directory_path;
+    }
 
-fs::path resolve_workspace_path(const fs::path &relative_path) {
-  if (relative_path.is_absolute()) {
-    return relative_path;
-  }
+    const fs::path workspace_root = find_workspace_root(__FILE__);
+    if (!workspace_root.empty())
+    {
+      return workspace_root / relative_path;
+    }
 
-  const fs::path current_working_directory_path = fs::absolute(relative_path);
-  if (fs::exists(current_working_directory_path)) {
     return current_working_directory_path;
   }
 
-  const fs::path workspace_root = find_workspace_root(__FILE__);
-  if (!workspace_root.empty()) {
-    return workspace_root / relative_path;
-  }
+} // namespace
 
-  return current_working_directory_path;
-}
-
-}  // namespace
-
-
-static float linear_interpolate(float start, float end, float percentage) {
+static float linear_interpolate(float start, float end, float percentage)
+{
   float target;
   percentage = std::fmin(std::fmax(percentage, 0.0f), 1.0f);
   target = start * (1.f - percentage) + end * percentage;
   return target;
 }
-
 
 RealHumanoid::RealHumanoid(
     const IMUConfiguration &imu_configuration,
@@ -76,49 +82,60 @@ RealHumanoid::RealHumanoid(
     std::string right_leg_bus_name)
     : imu_configuration_(imu_configuration),
       left_leg_bus_name_(std::move(left_leg_bus_name)),
-      right_leg_bus_name_(std::move(right_leg_bus_name)) {
+      right_leg_bus_name_(std::move(right_leg_bus_name))
+{
   imu = nullptr;
   state = STATE_IDLE;
   next_state = STATE_IDLE;
 
-  for (size_t i=0; i<N_JOINTS; i+=1) {
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
     position_target[i] = 0;
     position_measured[i] = 0;
     velocity_measured[i] = 0;
   }
 
-  for (size_t i=0; i<N_LOWLEVEL_COMMANDS; i+=1) {
+  for (size_t i = 0; i < N_LOWLEVEL_COMMANDS; i += 1)
+  {
     lowlevel_commands[i] = 0;
   }
-  for (size_t i=0; i<N_LOWLEVEL_STATES; i+=1) {
+  for (size_t i = 0; i < N_LOWLEVEL_STATES; i += 1)
+  {
     lowlevel_states[i] = 0;
   }
 
   const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);
-  if (fs::exists(calibration_path)) {
+  if (fs::exists(calibration_path))
+  {
     YAML::Node calibration_config = YAML::LoadFile(calibration_path.string());
-    for (size_t i=0; i<N_JOINTS; i+=1) {
+    for (size_t i = 0; i < N_JOINTS; i += 1)
+    {
       position_offsets[i] = calibration_config["position_offsets"][i].as<float>();
     }
-  } else {
+  }
+  else
+  {
     printf(
         "[INFO] <Main>: Calibration file %s not found, using zero offsets\n",
         calibration_path.string().c_str());
   }
 
   printf("loaded joint offsets: ");
-  for (size_t i=0; i<N_JOINTS; i+=1) {
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
     printf("%.3f ", position_offsets[i]);
   }
   printf("\n");
 
   const fs::path policy_config_path = resolve_workspace_path(POLICY_CONFIG_PATH);
-  if (!fs::exists(policy_config_path)) {
+  if (!fs::exists(policy_config_path))
+  {
     throw std::runtime_error("Unable to find policy config: " + policy_config_path.string());
   }
 
   YAML::Node policy_config = YAML::LoadFile(policy_config_path.string());
-  for (size_t i=0; i<N_JOINTS; i+=1) {
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
     joint_kp[i] = policy_config["joint_kp"][i].as<float>();
     joint_kd[i] = policy_config["joint_kd"][i].as<float>();
     torque_limit[i] = policy_config["effort_limits"][i].as<float>();
@@ -127,98 +144,112 @@ RealHumanoid::RealHumanoid(
   config_policy_dt_ = policy_config["policy_dt"].as<float>();
 }
 
-RealHumanoid::~RealHumanoid() {
+RealHumanoid::~RealHumanoid()
+{
   delete imu;
 }
 
+void RealHumanoid::control_loop()
+{
+  switch (state)
+  {
+  case STATE_IDLE:
+    /* In this state, the motor positions are held at the current measured positions */
+    /* When Y is pressed, the robot will switch to RL initialization mode */
 
-void RealHumanoid::control_loop() {
-  switch (state) {
-    case STATE_IDLE:
-      /* In this state, the motor positions are held at the current measured positions */
-      /* When Y is pressed, the robot will switch to RL initialization mode */
+    for (int i = 0; i < N_JOINTS; i += 1)
+    {
+      position_target[i] = position_measured[i];
+    }
+    if (next_state == STATE_RL_INIT)
+    {
+      printf("Switching to RL initialization mode\n");
+      state = next_state;
 
-      for (int i = 0; i < N_JOINTS; i += 1) {
-        position_target[i] = position_measured[i];
+      for (int i = 0; i < N_JOINTS; i += 1)
+      {
+        usleep(5);
+        joint_ptrs[i]->feed();
+        joint_ptrs[i]->set_mode(MODE_POSITION);
+        // starting_positions[i] = position_target[i];
       }
-      if (next_state == STATE_RL_INIT) {
-        printf("Switching to RL initialization mode\n");
+      init_percentage = 0.0;
+    }
+    break;
+
+  case STATE_RL_INIT:
+    /* In this state, the robot will hold the getup position */
+    // printf("init: %.3f\n", init_percentage);
+
+    if (init_percentage < 1.0)
+    {
+      init_percentage += 1 / 200.0;
+      init_percentage = init_percentage < 1.0 ? init_percentage : 1.0;
+
+      for (size_t i = 0; i < 12; i += 1)
+      {
+        position_target[i] = linear_interpolate(starting_positions[i], rl_init_positions[i], init_percentage);
+      }
+    }
+    else
+    {
+      if (next_state == STATE_RL_RUNNING)
+      {
+        printf("Switching to RL running mode\n");
         state = next_state;
-
-        for (int i = 0; i < N_JOINTS; i += 1) {
-          usleep(5);
-          joint_ptrs[i]->feed();
-          joint_ptrs[i]->set_mode(MODE_POSITION);
-          starting_positions[i] = position_target[i];
-        }
-        init_percentage = 0.0;
       }
-      break;
-
-    case STATE_RL_INIT:
-      /* In this state, the robot will hold the getup position */
-      // printf("init: %.3f\n", init_percentage);
-
-      if (init_percentage < 1.0) {
-        init_percentage += 1 / 200.0;
-        init_percentage = init_percentage < 1.0 ? init_percentage : 1.0;
-
-        for (size_t i=0; i<12; i+=1) {
-          position_target[i] = linear_interpolate(starting_positions[i], rl_init_positions[i], init_percentage);
-        }
-      }
-      else {
-        if (next_state == STATE_RL_RUNNING) {
-          printf("Switching to RL running mode\n");
-          state = next_state;
-        }
-        if (next_state == STATE_IDLE) {
-          printf("Switching to idle mode\n");
-          state = next_state;
-
-          for (int i = 0; i < N_JOINTS; i += 1) {
-            usleep(5);
-            joint_ptrs[i]->set_mode(MODE_DAMPING);
-          }
-        }
-      }
-      break;
-
-    case STATE_RL_RUNNING:
-      /* In this state, the robot will follow the policy */
-      for (int i = 0; i < N_LOWLEVEL_COMMANDS; i += 1) {
-        position_target[i] = lowlevel_commands[i];
-      }
-
-      if (next_state == STATE_IDLE) {
+      if (next_state == STATE_IDLE)
+      {
         printf("Switching to idle mode\n");
         state = next_state;
 
-        for (int i = 0; i < N_JOINTS; i += 1) {
+        for (int i = 0; i < N_JOINTS; i += 1)
+        {
           usleep(5);
           joint_ptrs[i]->set_mode(MODE_DAMPING);
         }
       }
+    }
+    break;
 
-      break;
+  case STATE_RL_RUNNING:
+    /* In this state, the robot will follow the policy */
+    for (int i = 0; i < N_LOWLEVEL_COMMANDS; i += 1)
+    {
+      position_target[i] = lowlevel_commands[i];
+    }
+
+    if (next_state == STATE_IDLE)
+    {
+      printf("Switching to idle mode\n");
+      state = next_state;
+
+      for (int i = 0; i < N_JOINTS; i += 1)
+      {
+        usleep(5);
+        joint_ptrs[i]->set_mode(MODE_DAMPING);
+      }
+    }
+
+    break;
   }
 
-  #if DEBUG_DISABLE_TRANSPORTS == 0
-    update_joints();
-  #endif
+#if DEBUG_DISABLE_TRANSPORTS == 0
+  update_joints();
+#endif
 
-  #if DEBUG_JOINT_DATA_LOGGING == 1
-    printf("%d %.2f \t%.2f \t%.2f \t- %.2f \t- %.2f \t%.2f \t",
-      control_loop_count,
-      position_measured[0], position_measured[1], position_measured[2],
-      position_measured[3],
-      position_measured[4], position_measured[5]);
-    // printf(" %.2f \t%.2f \t%.2f \t- %.2f \t- %.2f \t%.2f",
-    //   position_target[0], position_target[1], position_target[2],
-    //   position_target[3],
-    //   position_target[4], position_target[5]);
-    printf("\n");
-  #endif
+#if DEBUG_JOINT_DATA_LOGGING == 1
+  printf("%d %.2f \t%.2f \t%.2f \t- %.2f \t- %.2f \t%.2f \t",
+         control_loop_count,
+         position_measured[0], position_measured[1], position_measured[2],
+         position_measured[3],
+         position_measured[4], position_measured[5]);
+  // printf(" %.2f \t%.2f \t%.2f \t- %.2f \t- %.2f \t%.2f",
+  //   position_target[0], position_target[1], position_target[2],
+  //   position_target[3],
+  //   position_target[4], position_target[5]);
+  printf("\n");
+#endif
 
   /* base_quat */
   lowlevel_states[0] = imu->quaternion[0];
@@ -232,12 +263,14 @@ void RealHumanoid::control_loop() {
   lowlevel_states[6] = imu->angular_velocity[2];
 
   /* joint_positions */
-  for (int i = 0; i < N_JOINTS; i += 1) {
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
     lowlevel_states[7 + i] = position_measured[i];
   }
 
   /* joint_velocities */
-  for (int i = 0; i < N_JOINTS; i += 1) {
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
     lowlevel_states[19 + i] = velocity_measured[i];
   }
 
@@ -250,12 +283,15 @@ void RealHumanoid::control_loop() {
   lowlevel_states[34] = stick_command_velocity_yaw_;
 
   // execute every 4 control loops
-  if (control_loop_count >= (int)std::round(config_policy_dt_/ config_control_dt_)) {
-    if (state == STATE_IDLE || state == STATE_RL_RUNNING) {
+  if (control_loop_count >= (int)std::round(config_policy_dt_ / config_control_dt_))
+  {
+    if (state == STATE_IDLE || state == STATE_RL_RUNNING)
+    {
       size_t expected_bytes = sizeof(float) * N_LOWLEVEL_STATES;
       ssize_t actual_bytes = sendto(udp.sockfd, lowlevel_states, expected_bytes, 0, (const struct sockaddr *)&udp.send_addr, sizeof(udp.send_addr));
 
-      if (actual_bytes < 0 || actual_bytes != expected_bytes) {
+      if (actual_bytes < 0 || actual_bytes != expected_bytes)
+      {
         printf("[Error] <UDP> Error sending: %s\n", strerror(errno));
       }
     }
@@ -271,11 +307,13 @@ void RealHumanoid::control_loop() {
   control_loop_count += 1;
 }
 
-void RealHumanoid::imu_loop() {
+void RealHumanoid::imu_loop()
+{
   imu->update_reading();
 }
 
-void RealHumanoid::keyboard_loop() {
+void RealHumanoid::keyboard_loop()
+{
   termios term;
   tcgetattr(0, &term);
 
@@ -289,34 +327,36 @@ void RealHumanoid::keyboard_loop() {
 
   tcsetattr(0, TCSANOW, &term);
 
-  if (byteswaiting > 0) {
+  if (byteswaiting > 0)
+  {
     char c = fgetc(stdin);
     printf("key pressed: %c\n", c);
 
-    switch (c) {
-      case 'r':
-        next_state = STATE_RL_INIT;
-        break;
-      case 't':
-        next_state = STATE_RL_RUNNING;
-        break;
-      case 'q':
-        next_state = STATE_IDLE;
-        break;
+    switch (c)
+    {
+    case 'r':
+      next_state = STATE_RL_INIT;
+      break;
+    case 't':
+      next_state = STATE_RL_RUNNING;
+      break;
+    case 'q':
+      next_state = STATE_IDLE;
+      break;
     }
-
-
   }
 
   tcsetattr(0, TCSANOW, &term);
 }
 
-void RealHumanoid::joystick_loop() {
+void RealHumanoid::joystick_loop()
+{
   size_t expected_bytes = 13;
   uint8_t udp_buffer[13];
   ssize_t actual_bytes = recvfrom(udp_joystick.sockfd, udp_buffer, expected_bytes, MSG_WAITALL, NULL, NULL);
 
-  if (actual_bytes < 0 || actual_bytes != expected_bytes) {
+  if (actual_bytes < 0 || actual_bytes != expected_bytes)
+  {
     printf("[Error] <UDPStick> Error receiving: %s\n", strerror(errno));
 
     return;
@@ -327,49 +367,54 @@ void RealHumanoid::joystick_loop() {
   stick_command_velocity_y_ = *(float *)(udp_buffer + 5);
   stick_command_velocity_yaw_ = *(float *)(udp_buffer + 9);
 
-  if (command_mode != 0) {
-    switch (command_mode) {
-      case 1:
-        next_state = STATE_IDLE;
-        break;
-      case 2:
-        next_state = STATE_RL_INIT;
-        break;
-      case 3:
-        next_state = STATE_RL_RUNNING;
-        break;
-      default:
-        next_state = STATE_IDLE;
+  if (command_mode != 0)
+  {
+    switch (command_mode)
+    {
+    case 1:
+      next_state = STATE_IDLE;
+      break;
+    case 2:
+      next_state = STATE_RL_INIT;
+      break;
+    case 3:
+      next_state = STATE_RL_RUNNING;
+      break;
+    default:
+      next_state = STATE_IDLE;
     }
   }
 }
 
-void RealHumanoid::process_actions() {
-
+void RealHumanoid::process_actions()
+{
 }
 
-void RealHumanoid::process_observations() {
-
+void RealHumanoid::process_observations()
+{
 }
 
-void RealHumanoid::policy_forward() {
-
+void RealHumanoid::policy_forward()
+{
 }
 
-void RealHumanoid::udp_recv() {
+void RealHumanoid::udp_recv()
+{
   size_t expected_bytes = sizeof(float) * N_LOWLEVEL_COMMANDS;
   ssize_t actual_bytes = recvfrom(udp.sockfd, lowlevel_commands, expected_bytes, MSG_WAITALL, NULL, NULL);
 
-  if (actual_bytes < 0 || actual_bytes != expected_bytes) {
+  if (actual_bytes < 0 || actual_bytes != expected_bytes)
+  {
     printf("[Error] <UDP> Error receiving: %s\n", strerror(errno));
   }
-  //TODO: detect if the action is delayed
-
+  // TODO: detect if the action is delayed
 }
 
-void RealHumanoid::update_joints() {
+void RealHumanoid::update_joints()
+{
   /* set target positions to joint controller */
-  for (size_t i = 0; i < N_JOINTS; i += 1) {
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
     joint_ptrs[i]->set_target_position((position_target[i] + position_offsets[i]) * joint_axis_directions[i]);
   }
 
@@ -404,15 +449,17 @@ void RealHumanoid::update_joints() {
   joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT]->read_pdo_2();
 
   /* update measured positions from joint controller */
-  for (size_t i = 0; i < N_JOINTS; i += 1) {
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
     position_measured[i] = joint_ptrs[i]->get_measured_position() * joint_axis_directions[i] - position_offsets[i];
     velocity_measured[i] = joint_ptrs[i]->get_measured_velocity() * joint_axis_directions[i];
   }
 }
 
-
-void RealHumanoid::stop() {
-  if (stopped == 0) {
+void RealHumanoid::stop()
+{
+  if (stopped == 0)
+  {
     stopped = 1;
 
     loop_udp_recv->shutdown();
@@ -420,68 +467,73 @@ void RealHumanoid::stop() {
     loop_keyboard->shutdown();
     loop_joystick->shutdown();
 
-    #if DEBUG_DISABLE_TRANSPORTS == 0
-      for (int i = 0; i < N_JOINTS; i += 1) {
-        joint_ptrs[i]->set_mode(MODE_DAMPING);
-      }
-    #endif
+#if DEBUG_DISABLE_TRANSPORTS == 0
+    for (int i = 0; i < N_JOINTS; i += 1)
+    {
+      joint_ptrs[i]->set_mode(MODE_DAMPING);
+    }
+#endif
 
     printf("Entered damping mode. Press Ctrl+C again to exit.\n");
   }
-  else if (stopped == 1) {
+  else if (stopped == 1)
+  {
     printf("exiting...\n");
 
-    #if DEBUG_DISABLE_TRANSPORTS == 0
-      for (int i = 0; i < N_JOINTS; i += 1) {
-        joint_ptrs[i]->set_mode(MODE_IDLE);
-      }
-    #endif
+#if DEBUG_DISABLE_TRANSPORTS == 0
+    for (int i = 0; i < N_JOINTS; i += 1)
+    {
+      joint_ptrs[i]->set_mode(MODE_IDLE);
+    }
+#endif
 
     stopped = 2;
 
     sleep(1);
   }
 
-
   printf("RealHumanoid stopped\n");
 }
 
-void RealHumanoid::initialize() {
+void RealHumanoid::initialize()
+{
   ssize_t status;
 
-  #if DEBUG_DISABLE_TRANSPORTS == 0
-    // // left arm
-    // left_arm_bus.open("can0");
-    // if (!left_arm_bus.isOpen()) {
-    //   printf("[ERROR] <Main>: Error initializing left arm transport\n");
-    //   exit(1);
-    // }
+#if DEBUG_DISABLE_TRANSPORTS == 0
+  // // left arm
+  // left_arm_bus.open("can0");
+  // if (!left_arm_bus.isOpen()) {
+  //   printf("[ERROR] <Main>: Error initializing left arm transport\n");
+  //   exit(1);
+  // }
 
-    // // right arm
-    // right_arm_bus.open("can1");
-    // if (!right_arm_bus.isOpen()) {
-    //   printf("[ERROR] <Main>: Error initializing right arm transport\n");
-    //   exit(1);
-    // }
+  // // right arm
+  // right_arm_bus.open("can1");
+  // if (!right_arm_bus.isOpen()) {
+  //   printf("[ERROR] <Main>: Error initializing right arm transport\n");
+  //   exit(1);
+  // }
 
-    // left leg
-    left_leg_bus.open(left_leg_bus_name_);
-    if (!left_leg_bus.isOpen()) {
-      printf(
-          "[ERROR] <Main>: Error initializing left leg transport on %s\n",
-          left_leg_bus_name_.c_str());
-      exit(1);
-    }
+  // left leg
+  left_leg_bus.open(left_leg_bus_name_);
+  if (!left_leg_bus.isOpen())
+  {
+    printf(
+        "[ERROR] <Main>: Error initializing left leg transport on %s\n",
+        left_leg_bus_name_.c_str());
+    exit(1);
+  }
 
-    // right leg
-    right_leg_bus.open(right_leg_bus_name_);
-    if (!right_leg_bus.isOpen()) {
-      printf(
-          "[ERROR] <Main>: Error initializing right leg transport on %s\n",
-          right_leg_bus_name_.c_str());
-      exit(1);
-    }
-  #endif
+  // right leg
+  right_leg_bus.open(right_leg_bus_name_);
+  if (!right_leg_bus.isOpen())
+  {
+    printf(
+        "[ERROR] <Main>: Error initializing right leg transport on %s\n",
+        right_leg_bus_name_.c_str());
+    exit(1);
+  }
+#endif
 
   // // left arm
   // joint_ptrs[ARM_LEFT_SHOULDER_PITCH_JOINT] = std::make_shared<MotorController>(&left_arm_bus, 1);
@@ -513,86 +565,98 @@ void RealHumanoid::initialize() {
   joint_ptrs[LEG_RIGHT_ANKLE_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 12);
   joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 14);
 
-
-  #if DEBUG_DISABLE_TRANSPORTS == 0
-    for (int i = 0; i < N_JOINTS; i += 1) {
-      joint_ptrs[i]->set_mode(MODE_IDLE);
-    }
-  #endif
+#if DEBUG_DISABLE_TRANSPORTS == 0
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
+    joint_ptrs[i]->set_mode(MODE_IDLE);
+  }
+#endif
 
   imu = new IMU(imu_configuration_);
 
   status = imu->init();
-  if (status < 0) {
+  if (status < 0)
+  {
     printf("[ERROR] <Main>: Error initializing IMU\n");
     exit(1);
   }
 
   status = initialize_udp(&udp, "0.0.0.0", POLICY_ACS_PORT, ROBOT_IP_ADDR, POLICY_OBS_PORT);
-  if (status < 0) {
+  if (status < 0)
+  {
     printf("[ERROR] <Main>: Error initializing UDP\n");
     exit(1);
   }
 
   // Initialize joystick UDP socket to listen on ROBOT_IP:10011 and send to ROBOT_IP:10011
   status = initialize_udp(&udp_joystick, "0.0.0.0", JOYSTICK_PORT, "127.0.0.1", JOYSTICK_PORT);
-  if (status < 0) {
+  if (status < 0)
+  {
     printf("[ERROR] <Main>: Error initializing UDP joystick\n");
     exit(1);
   }
 
   // 500 Hz UDP receive
-  loop_udp_recv = std::make_shared<LoopFunc>("loop_udp_recv", 0.002, [this] { udp_recv(); }, 1, true, 49);
+  loop_udp_recv = std::make_shared<LoopFunc>("loop_udp_recv", 0.002, [this]
+                                             { udp_recv(); }, 1, true, 49);
 
   // 500 Hz IMU input
-  loop_imu = std::make_shared<LoopFunc>("loop_imu", 0.002, [this] { imu_loop(); }, 1, true, 49);
+  loop_imu = std::make_shared<LoopFunc>("loop_imu", 0.002, [this]
+                                        { imu_loop(); }, 1, true, 49);
 
   // 20 Hz keyboard input
-  loop_keyboard = std::make_shared<LoopFunc>("loop_keyboard", 0.05, [this] { keyboard_loop(); }, 0, true, 19);
+  loop_keyboard = std::make_shared<LoopFunc>("loop_keyboard", 0.05, [this]
+                                             { keyboard_loop(); }, 0, true, 19);
 
   // 20 Hz joystick input
-  loop_joystick = std::make_shared<LoopFunc>("loop_joystick", 0.05, [this] { joystick_loop(); }, 1, true, 19);
+  loop_joystick = std::make_shared<LoopFunc>("loop_joystick", 0.05, [this]
+                                             { joystick_loop(); }, 1, true, 19);
 
   // we want to ensure all packages are transmitted before killing this thread
   // 100 Hz control loop
-  loop_control = std::make_shared<LoopFunc>("loop_control", 0.004, [this] { control_loop(); }, 0, false, 50, true);
+  loop_control = std::make_shared<LoopFunc>("loop_control", 0.004, [this]
+                                            { control_loop(); }, 0, false, 50, true);
 }
 
-
-void RealHumanoid::run() {
+void RealHumanoid::run()
+{
   initialize();
 
   printf("Enabling motors...\n");
 
   printf("read config joint_kp:\n [");
-  for (int i = 0; i < N_JOINTS; i += 1) {
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
     printf("%.3f ", joint_kp[i]);
   }
   printf("]\n");
   printf("read config joint_kd:\n [");
-  for (int i = 0; i < N_JOINTS; i += 1) {
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
     printf("%.3f ", joint_kd[i]);
   }
   printf("]\n");
   printf("read config torque_limit:\n [");
-  for (int i = 0; i < N_JOINTS; i += 1) {
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
     printf("%.3f ", torque_limit[i]);
   }
   printf("]\n");
 
-  #if DEBUG_DISABLE_TRANSPORTS == 0
-    for (int i = 0; i < N_JOINTS; i += 1) {
-      usleep(10);
-      joint_ptrs[i]->write_position_kp(joint_kp[i]);
-      usleep(10);
-      joint_ptrs[i]->write_position_kd(joint_kd[i]);
-      usleep(10);
-      joint_ptrs[i]->write_torque_limit(torque_limit[i]);
-      usleep(100);
-      joint_ptrs[i]->feed();
-      joint_ptrs[i]->set_mode(MODE_DAMPING);
-    }
-  #endif
+#if DEBUG_DISABLE_TRANSPORTS == 0
+  for (int i = 0; i < N_JOINTS; i += 1)
+  {
+    usleep(10);
+    joint_ptrs[i]->write_position_kp(joint_kp[i]);
+    usleep(10);
+    joint_ptrs[i]->write_position_kd(joint_kd[i]);
+    usleep(10);
+    joint_ptrs[i]->write_torque_limit(torque_limit[i]);
+    usleep(100);
+    joint_ptrs[i]->feed();
+    joint_ptrs[i]->set_mode(MODE_DAMPING);
+  }
+#endif
 
   printf("Motors enabled\n");
 
@@ -602,7 +666,8 @@ void RealHumanoid::run() {
   loop_imu->start();
   loop_control->start();
 
-  while (stopped != 2) {
+  while (stopped != 2)
+  {
     sleep(1);
   }
 }
