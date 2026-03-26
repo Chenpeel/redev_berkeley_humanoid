@@ -21,3 +21,8 @@ packages/*/build/
 packages/*/dist/
 packages/*/*.egg-info/
 **/build/
+**/CLAUDE.md
+.claude
+.codex
+.gemini
+*.log
