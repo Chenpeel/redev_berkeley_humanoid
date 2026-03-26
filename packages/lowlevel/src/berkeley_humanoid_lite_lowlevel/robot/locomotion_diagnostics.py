@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..sensors.orientation import OrientationSample
 from .control_state import LocomotionControlState
 from .locomotion_specification import LocomotionRobotSpecification
 
@@ -24,6 +25,32 @@ class LocomotionDiagnosticSnapshot:
     dry_run: bool
     risk_joint_name: str
     risk_raw_delta_to_initialization: float
+
+
+def format_imu_debug_line(
+    quaternion_wxyz: np.ndarray,
+    angular_velocity_deg_s: np.ndarray,
+) -> str:
+    quaternion = np.asarray(quaternion_wxyz, dtype=np.float32)
+    angular_velocity = np.asarray(angular_velocity_deg_s, dtype=np.float32)
+    sample = OrientationSample(
+        quaternion_wxyz=tuple(float(value) for value in quaternion),
+        angular_velocity_xyz=tuple(float(value) for value in angular_velocity),
+        timestamp=0.0,
+    )
+    roll, pitch, yaw = sample.to_euler_degrees()
+    return (
+        "IMU attitude[deg]: "
+        f"roll={roll:+7.2f} "
+        f"pitch={pitch:+7.2f} "
+        f"yaw={yaw:+7.2f} | "
+        "gyro[deg/s]: "
+        f"x={angular_velocity[0]:+7.2f} "
+        f"y={angular_velocity[1]:+7.2f} "
+        f"z={angular_velocity[2]:+7.2f} | "
+        "quat[wxyz]: "
+        f"[{quaternion[0]:+.4f}, {quaternion[1]:+.4f}, {quaternion[2]:+.4f}, {quaternion[3]:+.4f}]"
+    )
 
 
 def build_locomotion_diagnostic_snapshot(

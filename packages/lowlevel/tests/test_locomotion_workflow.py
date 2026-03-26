@@ -169,6 +169,9 @@ class LocomotionWorkflowTests(unittest.TestCase):
                     dry_run=False,
                 )
 
+            def create_imu_debug_line(self) -> str | None:
+                return None
+
             def stop(self) -> None:
                 return None
 
@@ -219,6 +222,70 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertIn("[DEBUG] init_raw", output)
         self.assertIn("[DEBUG] risk", output)
 
+    def test_run_locomotion_loop_debug_imu_prints_imu_snapshot(self) -> None:
+        fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
+        fake_policy_module.PolicyController = FakePolicyController
+
+        class FakeRobot:
+            state = LocomotionControlState.POLICY_CONTROL
+            requested_state = LocomotionControlState.POLICY_CONTROL
+
+            def enter_damping_mode(self) -> None:
+                return None
+
+            def reset(self) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def step(self, actions: np.ndarray) -> np.ndarray:
+                return np.zeros((15,), dtype=np.float32)
+
+            def create_imu_debug_line(self) -> str | None:
+                return (
+                    "IMU attitude[deg]: roll=  +1.00 pitch=  -2.00 yaw=  +3.00 | "
+                    "gyro[deg/s]: x=  +4.00 y=  -5.00 z=  +6.00 | "
+                    "quat[wxyz]: [+1.0000, +0.0000, +0.0000, +0.0000]"
+                )
+
+            def stop(self) -> None:
+                return None
+
+        class FakeObservationStream:
+            def send_numpy(self, observations: np.ndarray) -> None:
+                raise KeyboardInterrupt()
+
+            def stop(self) -> None:
+                return None
+
+        configuration = SimpleNamespace(
+            policy_dt=0.02,
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, 0.0],
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            with mock.patch.dict(
+                "sys.modules",
+                {"berkeley_humanoid_lite_lowlevel.policy.controller": fake_policy_module},
+            ):
+                with mock.patch.object(locomotion_workflow, "create_locomotion_robot", return_value=FakeRobot()):
+                    with mock.patch.object(
+                        locomotion_workflow,
+                        "create_observation_stream",
+                        return_value=FakeObservationStream(),
+                    ):
+                        locomotion_workflow.run_locomotion_loop(
+                            configuration,
+                            debug_imu=True,
+                            debug_imu_every=1,
+                        )
+
+        output = stdout.getvalue()
+        self.assertIn("IMU debug enabled every 1 policy steps", output)
+        self.assertIn("[DEBUG][IMU] step=0 IMU attitude[deg]:", output)
+        self.assertIn("gyro[deg/s]:", output)
+        self.assertIn("quat[wxyz]:", output)
+
     def test_run_locomotion_loop_dry_run_skips_motor_mode_setup(self) -> None:
         fake_policy_module = ModuleType("berkeley_humanoid_lite_lowlevel.policy.controller")
         fake_policy_module.PolicyController = FakePolicyController
@@ -238,6 +305,9 @@ class LocomotionWorkflowTests(unittest.TestCase):
 
             def step(self, actions: np.ndarray) -> np.ndarray:
                 return np.zeros((15,), dtype=np.float32)
+
+            def create_imu_debug_line(self) -> str | None:
+                return None
 
             def stop(self) -> None:
                 return None

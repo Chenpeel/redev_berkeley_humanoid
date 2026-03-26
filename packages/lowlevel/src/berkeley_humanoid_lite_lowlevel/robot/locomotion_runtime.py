@@ -10,7 +10,11 @@ from .control_state import LocomotionControlState
 from .imu import SerialImu
 from .joint_transport import JointInterface, LocomotionActuatorArray
 from .locomotion_cycle import LocomotionCycleContext, advance_locomotion_cycle
-from .locomotion_diagnostics import LocomotionDiagnosticSnapshot, build_locomotion_diagnostic_snapshot
+from .locomotion_diagnostics import (
+    LocomotionDiagnosticSnapshot,
+    build_locomotion_diagnostic_snapshot,
+    format_imu_debug_line,
+)
 from .locomotion_specification import (
     LocomotionRobotSpecification,
     build_default_locomotion_robot_specification,
@@ -134,10 +138,7 @@ class LocomotionRobot:
 
         if self.imu is not None:
             imu_quaternion[:] = self.imu.quaternion[:]
-            print(f"IMU raw quaternion: {self.imu.quaternion[:]}")
             imu_angular_velocity[:] = np.deg2rad(self.imu.angular_velocity[:])
-            print(
-                f"IMU quaternion: {imu_quaternion}, angular velocity (rad/s): {imu_angular_velocity}")
         else:
             imu_quaternion[:] = np.array(
                 [1.0, 0.0, 0.0, 0.0], dtype=np.float32)
@@ -212,6 +213,14 @@ class LocomotionRobot:
             position_offsets=self.position_offsets,
             joint_axis_directions=self.joint_axis_directions,
             dry_run=self.dry_run,
+        )
+
+    def create_imu_debug_line(self) -> str | None:
+        if self.imu is None:
+            return None
+        return format_imu_debug_line(
+            quaternion_wxyz=self.imu.quaternion,
+            angular_velocity_deg_s=self.imu.angular_velocity,
         )
 
     def read_joint_positions(self) -> np.ndarray:

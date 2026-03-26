@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
-
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_cycle import (
     LocomotionCycleContext,

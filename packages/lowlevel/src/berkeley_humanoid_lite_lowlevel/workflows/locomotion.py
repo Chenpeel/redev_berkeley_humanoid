@@ -47,7 +47,10 @@ def print_locomotion_debug_snapshot(
         f"step={step_index} "
         f"state={_format_control_state(snapshot.state)} "
         f"requested={_format_control_state(snapshot.requested_state)} "
-        f"cmd=({snapshot.command_velocity[0]:+.3f}, {snapshot.command_velocity[1]:+.3f}, {snapshot.command_velocity[2]:+.3f})"
+        "cmd=("
+        f"{snapshot.command_velocity[0]:+.3f}, "
+        f"{snapshot.command_velocity[1]:+.3f}, "
+        f"{snapshot.command_velocity[2]:+.3f})"
     )
     print("[DEBUG] actions  =", _format_array(snapshot.actions))
     print("[DEBUG] targets  =", _format_array(snapshot.targets))
@@ -63,6 +66,14 @@ def print_locomotion_debug_snapshot(
         f"{snapshot.risk_joint_name} raw_init_delta={snapshot.risk_raw_delta_to_initialization:+.3f} "
         f"dry_run={snapshot.dry_run}",
     )
+
+
+def print_locomotion_imu_debug_line(
+    *,
+    step_index: int,
+    line: str,
+) -> None:
+    print(f"[DEBUG][IMU] step={step_index} {line}")
 
 
 def create_observation_stream(configuration: PolicyDeploymentConfiguration) -> UDP:
@@ -120,17 +131,23 @@ def run_locomotion_loop(
     dry_run: bool = False,
     debug: bool = False,
     debug_every: int = 25,
+    debug_imu: bool = False,
+    debug_imu_every: int = 25,
 ) -> None:
     from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
     if debug_every <= 0:
         raise ValueError("debug_every must be positive")
+    if debug_imu_every <= 0:
+        raise ValueError("debug_imu_every must be positive")
 
     print(f"Policy frequency: {1 / configuration.policy_dt} Hz")
     if dry_run:
         print("Dry-run enabled: observations and targets will be computed without sending motor commands")
     if debug:
         print(f"Debug snapshots enabled every {debug_every} policy steps")
+    if debug_imu:
+        print(f"IMU debug enabled every {debug_imu_every} policy steps")
 
     controller = PolicyController(configuration)
     controller.load_policy()
@@ -155,11 +172,11 @@ def run_locomotion_loop(
         while True:
             actions = controller.compute_actions(observations)
             observations = robot.step(actions)
+            state_changed = (
+                robot.state != previous_state
+                or robot.requested_state != previous_requested_state
+            )
             if debug:
-                state_changed = (
-                    robot.state != previous_state
-                    or robot.requested_state != previous_requested_state
-                )
                 if state_changed or step_index % debug_every == 0:
                     snapshot = robot.create_diagnostic_snapshot(
                         observations=observations,
@@ -169,8 +186,16 @@ def run_locomotion_loop(
                         step_index=step_index,
                         snapshot=snapshot,
                     )
-                previous_state = robot.state
-                previous_requested_state = robot.requested_state
+            if debug_imu:
+                if state_changed or step_index % debug_imu_every == 0:
+                    imu_debug_line = robot.create_imu_debug_line()
+                    if imu_debug_line is not None:
+                        print_locomotion_imu_debug_line(
+                            step_index=step_index,
+                            line=imu_debug_line,
+                        )
+            previous_state = robot.state
+            previous_requested_state = robot.requested_state
             observation_stream.send_numpy(observations)
             rate.sleep()
             step_index += 1

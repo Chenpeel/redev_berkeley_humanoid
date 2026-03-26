@@ -34,6 +34,17 @@ def main() -> None:
         default=25,
         help="Print a debug snapshot every N policy steps when --debug is enabled",
     )
+    parser.add_argument(
+        "--debug-imu",
+        action="store_true",
+        help="Print IMU attitude and angular velocity snapshots while running",
+    )
+    parser.add_argument(
+        "--debug-imu-every",
+        type=int,
+        default=25,
+        help="Print an IMU debug snapshot every N policy steps when --debug-imu is enabled",
+    )
     arguments = parser.parse_args()
 
     configuration = load_policy_deployment_configuration(arguments.config)
@@ -44,6 +55,8 @@ def main() -> None:
         dry_run=arguments.dry_run,
         debug=arguments.debug,
         debug_every=arguments.debug_every,
+        debug_imu=arguments.debug_imu,
+        debug_imu_every=arguments.debug_imu_every,
     )
 
 
