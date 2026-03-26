@@ -9,6 +9,7 @@ __all__ = [
     "configure_actuator",
     "export_actuator_configuration",
     "run_actuator_calibration",
+    "run_leg_actuator_calibration",
     "run_actuator_motion_demo",
     "run_joint_calibration",
     "apply_robot_configuration",
@@ -49,6 +50,10 @@ _MODULE_EXPORTS = {
     "run_actuator_calibration": (
         "berkeley_humanoid_lite_lowlevel.workflows.actuator",
         "run_actuator_calibration",
+    ),
+    "run_leg_actuator_calibration": (
+        "berkeley_humanoid_lite_lowlevel.workflows.actuator",
+        "run_leg_actuator_calibration",
     ),
     "run_actuator_motion_demo": (
         "berkeley_humanoid_lite_lowlevel.workflows.actuator",

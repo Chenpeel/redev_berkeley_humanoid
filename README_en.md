@@ -245,6 +245,15 @@ make lowlevel-run-imu-test IMU_TEST_ARGS="\
 
 ##### Calibration and Runtime
 
+> Run lower-body electrical calibration and write the updated settings to flash first
+
+```bash
+uv run python apps/lowlevel/motor/calibrate_leg_electrical_offsets.py \
+    --left-leg-bus can1 \
+    --right-leg-bus can0 \
+    --wait-seconds 20
+```
+
 > C++ / native main program
 >
 > Make sure the actual CAN interfaces are already up before running.

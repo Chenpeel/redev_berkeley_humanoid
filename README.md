@@ -227,6 +227,14 @@ make lowlevel-run-imu-test IMU_TEST_ARGS="\
 
 ##### 标定与运行
 
+> 先进行校准与回写
+
+```bash
+uv run python apps/lowlevel/motor/calibrate_leg_electrical_offsets.py \
+    --left-leg-bus can1 \
+    --right-leg-bus can0 \
+    --wait-seconds 20
+```
 > C++ / native 主程序
 >
 > 运行前先确保实际使用的 CAN 接口已经拉起。

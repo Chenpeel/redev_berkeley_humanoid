@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from pathlib import Path
 
 from berkeley_humanoid_lite_lowlevel.actuator import (
@@ -14,6 +15,11 @@ from berkeley_humanoid_lite_lowlevel.actuator import (
     resolve_angle_radians,
     run_actuator_angle_sequence,
     run_actuator_sine_motion,
+)
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
+    DEFAULT_LEFT_LEG_BUS,
+    DEFAULT_RIGHT_LEG_BUS,
+    build_leg_locomotion_robot_specification,
 )
 from berkeley_humanoid_lite_lowlevel.runtime_paths import ensure_parent_directory
 
@@ -102,6 +108,67 @@ def run_actuator_calibration(
         calibrate_actuator_electrical_offset(bus, device_id, wait_seconds=wait_seconds)
     finally:
         bus.stop()
+
+
+def run_leg_actuator_calibration(
+    *,
+    left_leg_bus: str = DEFAULT_LEFT_LEG_BUS,
+    right_leg_bus: str = DEFAULT_RIGHT_LEG_BUS,
+    bitrate: int = DEFAULT_ACTUATOR_BITRATE,
+    wait_seconds: float = 20.0,
+    store_to_flash: bool = True,
+    flash_settle_seconds: float = 0.5,
+    inter_joint_delay_seconds: float = 0.5,
+) -> None:
+    if wait_seconds < 0.0:
+        raise ValueError("wait_seconds must be non-negative")
+    if flash_settle_seconds < 0.0:
+        raise ValueError("flash_settle_seconds must be non-negative")
+    if inter_joint_delay_seconds < 0.0:
+        raise ValueError("inter_joint_delay_seconds must be non-negative")
+
+    specification = build_leg_locomotion_robot_specification(
+        left_leg_bus=left_leg_bus,
+        right_leg_bus=right_leg_bus,
+    )
+    buses: dict[str, object] = {}
+
+    try:
+        for address in specification.joint_addresses:
+            bus = buses.get(address.bus_name)
+            if bus is None:
+                bus = create_actuator_bus(channel=address.bus_name, bitrate=bitrate)
+                buses[address.bus_name] = bus
+
+            print(
+                f"Calibrating {address.joint_name} "
+                f"on {address.bus_name} (id={address.device_id})"
+            )
+
+            if not ping_actuator(bus, address.device_id):
+                raise RuntimeError(
+                    "Failed to ping actuator before electrical calibration: "
+                    f"{address.joint_name} on {address.bus_name} (id={address.device_id})"
+                )
+
+            calibrate_actuator_electrical_offset(
+                bus,
+                address.device_id,
+                wait_seconds=wait_seconds,
+            )
+
+            if flash_settle_seconds > 0.0:
+                time.sleep(flash_settle_seconds)
+
+            if store_to_flash:
+                bus.store_settings_to_flash(address.device_id)
+                print("Settings stored to flash!")
+
+            if inter_joint_delay_seconds > 0.0:
+                time.sleep(inter_joint_delay_seconds)
+    finally:
+        for bus in buses.values():
+            bus.stop()
 
 
 def run_actuator_motion_demo(
