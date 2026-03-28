@@ -54,8 +54,16 @@ def update_limit_readings(
     joint_readings: np.ndarray,
     calibration_limit_selectors: tuple[str, ...] | np.ndarray,
 ) -> np.ndarray:
+    """
+    Track the signed reading chosen for each joint's calibration reference pose.
+
+    The historical selector names are ``min`` / ``max``, but here they do not
+    mean "drive the joint to its farthest mechanical hard stop". They only
+    describe which signed reading should be retained while the operator moves
+    the robot into the predefined calibration pose.
+    """
     if limit_readings.shape != joint_readings.shape:
-        raise ValueError("极限读数和当前读数的形状必须一致。")
+        raise ValueError("标定参考位姿读数和当前读数的形状必须一致。")
 
     selector_array = np.asarray(calibration_limit_selectors)
     if selector_array.shape != limit_readings.shape:
@@ -79,8 +87,10 @@ def compute_position_offsets(
     limit_readings: np.ndarray,
     reference_positions: np.ndarray,
 ) -> np.ndarray:
+    # 标定的本质是把“校准参考位姿下读到的原始关节值”映射回 spec 定义的参考角。
+    # 因此这里的 reference_positions 是 calibration reference pose，不是机械极限位。
     if limit_readings.shape != reference_positions.shape:
-        raise ValueError("极限读数和参考位姿的形状必须一致。")
+        raise ValueError("标定参考位姿读数和参考位姿的形状必须一致。")
     return (limit_readings - reference_positions).astype(np.float32, copy=False)
 
 
@@ -90,11 +100,32 @@ def capture_calibration_offsets(
     command_source: CommandSource,
     polling_interval_seconds: float = 0.05,
 ) -> np.ndarray:
+    # 这个流程记录的是“校准参考位姿”下的原始读数。
+    # 操作者应该把机器人摆到期望的 calibration reference pose，
+    # 而不是反复去找每个关节能到达的最大机械行程。
     limit_readings = actuator_array.read_positions()
-    print("initial readings:")
+    print("Calibration reference pose guide:")
+    for joint_name, reference_position, selector in zip(
+        specification.joint_names,
+        specification.calibration_reference_positions,
+        specification.calibration_limit_selectors,
+        strict=True,
+    ):
+        print(
+            f"  {joint_name}: target={np.rad2deg(reference_position):+.2f} deg, "
+            f"selector={selector}"
+        )
+    print("Selector note: min/max only selects the signed reading to retain for that reference pose.")
+    print("Do not search for the farthest mechanical limit.")
+    print("Switch the gamepad back to IDLE only after the robot is holding the intended calibration pose.")
+
+    print("initial readings before moving to calibration reference poses:")
     print([f"{reading:.2f}" for reading in limit_readings])
 
-    while getattr(command_source.snapshot(), "requested_state", LocomotionControlState.INVALID) != LocomotionControlState.IDLE:
+    while (
+        getattr(command_source.snapshot(), "requested_state", LocomotionControlState.INVALID)
+        != LocomotionControlState.IDLE
+    ):
         joint_readings = actuator_array.read_positions()
         limit_readings = update_limit_readings(
             limit_readings,
@@ -109,7 +140,7 @@ def capture_calibration_offsets(
         specification.calibration_reference_positions,
     )
 
-    print("final readings at the limits:")
+    print("final readings captured for calibration reference poses:")
     print([f"{limit_reading:.4f}" for limit_reading in limit_readings])
 
     print("offsets:")

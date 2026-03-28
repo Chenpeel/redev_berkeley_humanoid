@@ -109,6 +109,9 @@ RealHumanoid::RealHumanoid(
   const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);
   if (fs::exists(calibration_path))
   {
+    // calibration.yaml stores offsets derived from the specification-defined
+    // calibration reference pose. These offsets are not captured at the
+    // farthest mechanical joint limits.
     YAML::Node calibration_config = YAML::LoadFile(calibration_path.string());
     for (size_t i = 0; i < N_JOINTS; i += 1)
     {
@@ -128,6 +131,9 @@ RealHumanoid::RealHumanoid(
     printf("%.3f ", position_offsets[i]);
   }
   printf("\n");
+  printf(
+      "[INFO] <Main>: These joint offsets must come from the calibration reference pose, "
+      "not from forcing the robot to its mechanical limits.\n");
 
   const fs::path policy_config_path = resolve_workspace_path(POLICY_CONFIG_PATH);
   if (!fs::exists(policy_config_path))

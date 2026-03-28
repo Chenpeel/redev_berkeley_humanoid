@@ -30,8 +30,16 @@ def run_joint_calibration(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
         )
+        print(
+            "Joint calibration records the raw readings for the specification-defined "
+            "calibration reference pose, not the mechanical limit."
+        )
         # 标定必须基于原始位置读数，不能先加载已有 calibration.yaml，
         # 否则重复标定会在旧 offset 基础上继续漂移。
+        #
+        # 这里记录的是“spec 里定义的 calibration reference pose”对应的原始关节读数，
+        # 不是让操作者把每个关节推到最远机械极限位。
+        # 如果按“机械极限位”去摆机器人，保存下来的 offset 会系统性错误。
         actuator_array = LocomotionActuatorArray(
             specification=specification,
             position_offsets=np.zeros((specification.joint_count,), dtype=np.float32),

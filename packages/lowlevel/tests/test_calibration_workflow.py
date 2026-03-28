@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import unittest
 from unittest import mock
 
 import numpy as np
-
 from berkeley_humanoid_lite_lowlevel.workflows import calibration as calibration_workflow
 
 
@@ -59,6 +60,44 @@ class CalibrationWorkflowTests(unittest.TestCase):
             captured["saved_offsets"],
             specification.initialization_positions,
         )
+
+    def test_run_joint_calibration_prints_reference_pose_note(self) -> None:
+        class FakeActuatorArray:
+            def __init__(self, specification=None, position_offsets=None, **_: object) -> None:
+                self.specification = specification
+                self.position_offsets = np.asarray(position_offsets, dtype=np.float32)
+
+            def shutdown(self) -> None:
+                return None
+
+        class FakeCommandSource:
+            def start(self) -> None:
+                return None
+
+            def stop(self) -> None:
+                return None
+
+        class FakeStore:
+            def save_position_offsets(self, offsets: np.ndarray) -> str:
+                return "artifacts/calibration.yaml"
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            with (
+                mock.patch.object(calibration_workflow, "LocomotionActuatorArray", FakeActuatorArray),
+                mock.patch.object(calibration_workflow, "GamepadCommandSource", FakeCommandSource),
+                mock.patch.object(calibration_workflow, "CalibrationStore", FakeStore),
+                mock.patch.object(
+                    calibration_workflow,
+                    "capture_calibration_offsets",
+                    return_value=np.zeros((12,), dtype=np.float32),
+                ),
+            ):
+                calibration_workflow.run_joint_calibration()
+
+        output = stdout.getvalue()
+        self.assertIn("calibration reference pose", output)
+        self.assertIn("not the mechanical limit", output)
 
 
 if __name__ == "__main__":
