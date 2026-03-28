@@ -35,7 +35,7 @@
             "velocity_filter_alpha": 0.7153904438018799,
             "flux_offset": -32.23617935180664
         },
-        "device_id": 5,
+        "device_id": 1,
         "firmware_version": "0x20250226",
         "watchdog_timeout": 1000,
         "fast_frame_frequency": 0
@@ -117,7 +117,7 @@
             "velocity_filter_alpha": 0.7153904438018799,
             "flux_offset": 1.0842320919036865
         },
-        "device_id": 1,
+        "device_id": 5,
         "firmware_version": "0x20250226",
         "watchdog_timeout": 1000,
         "fast_frame_frequency": 0
@@ -281,7 +281,7 @@
             "velocity_filter_alpha": 0.7153904438018799,
             "flux_offset": -12.801095008850098
         },
-        "device_id": 6,
+        "device_id": 2,
         "firmware_version": "0x20250226",
         "watchdog_timeout": 1000,
         "fast_frame_frequency": 0
@@ -363,7 +363,7 @@
             "velocity_filter_alpha": 0.7153904438018799,
             "flux_offset": 24.0967960357666
         },
-        "device_id": 2,
+        "device_id": 6,
         "firmware_version": "0x20250226",
         "watchdog_timeout": 1000,
         "fast_frame_frequency": 0
