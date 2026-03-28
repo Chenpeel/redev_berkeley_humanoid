@@ -63,6 +63,12 @@ target_include_directories(test-udp PRIVATE src)
 set_property(TARGET test-udp PROPERTY CXX_STANDARD 17)
 
 
+# Low-level control protocol
+add_executable(test-lowlevel-control tests/test-lowlevel-control.cpp)
+target_include_directories(test-lowlevel-control PRIVATE src)
+set_property(TARGET test-lowlevel-control PROPERTY CXX_STANDARD 17)
+
+
 # YAML
 add_executable(test-yaml tests/test-yaml.cpp)
 target_include_directories(test-yaml PRIVATE src)
