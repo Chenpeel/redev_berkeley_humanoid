@@ -69,7 +69,7 @@ class GamepadInputTests(unittest.TestCase):
         self.assertEqual(fake_devices.all_devices, [fake_gamepad])
 
     def test_command_source_advance_retries_after_registering_linux_fallback(self) -> None:
-        command_source = GamepadCommandSource()
+        command_source = GamepadCommandSource(dead_zone=0.0)
         fake_devices = SimpleNamespace(gamepads=[])
         fake_event = SimpleNamespace(code="ABS_X", state=1234)
 

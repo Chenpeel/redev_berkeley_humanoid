@@ -20,6 +20,8 @@ else:  # pragma: no cover - 仅在真实硬件环境下执行
 
 from .control_state import LocomotionControlState
 
+DEFAULT_GAMEPAD_DEAD_ZONE = 0.1
+
 
 class XInputCode:
     AXIS_X_L = "ABS_X"
@@ -205,7 +207,7 @@ def build_command_from_states(
     states: dict[str, int],
     *,
     stick_sensitivity: float = 1.0,
-    dead_zone: float = 0.01,
+    dead_zone: float = DEFAULT_GAMEPAD_DEAD_ZONE,
     axis_modes: dict[str, str] | None = None,
 ) -> LocomotionCommand:
     def normalize(code: str) -> float:
@@ -247,7 +249,7 @@ class GamepadCommandSource:
         self,
         *,
         stick_sensitivity: float = 1.0,
-        dead_zone: float = 0.01,
+        dead_zone: float = DEFAULT_GAMEPAD_DEAD_ZONE,
     ) -> None:
         self.stick_sensitivity = stick_sensitivity
         self.dead_zone = dead_zone

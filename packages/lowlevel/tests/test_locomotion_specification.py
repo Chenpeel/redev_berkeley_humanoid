@@ -128,6 +128,20 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
             atol=1e-4,
         )
 
+    def test_build_command_from_states_default_dead_zone_filters_small_stick_drift(self) -> None:
+        states = {
+            "ABS_X": 2000,
+            "ABS_Y": -1500,
+            "ABS_RX": 1000,
+        }
+
+        command = build_command_from_states(states, stick_sensitivity=1.0)
+
+        np.testing.assert_allclose(
+            np.array([command.velocity_x, command.velocity_y, command.velocity_yaw], dtype=np.float32),
+            np.zeros((3,), dtype=np.float32),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

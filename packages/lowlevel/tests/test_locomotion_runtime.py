@@ -348,6 +348,88 @@ class LocomotionRuntimeTests(unittest.TestCase):
         printed_lines = " ".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
         self.assertIn("Policy gate blocked:", printed_lines)
 
+    def test_get_observations_zeroes_command_during_policy_entry_window(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+
+        with mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+                policy_entry_zero_command_steps=2,
+            )
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+            robot._policy_entry_zero_command_steps_remaining = 2
+
+            with mock.patch.object(
+                robot,
+                "_get_command",
+                return_value=SimpleNamespace(
+                    requested_state=locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL,
+                    velocity_x=0.8,
+                    velocity_y=-0.4,
+                    velocity_yaw=0.2,
+                ),
+            ):
+                first_observations = robot.get_observations().copy()
+                second_observations = robot.get_observations().copy()
+                third_observations = robot.get_observations().copy()
+
+            robot.shutdown()
+
+        command_start = 7 + specification.joint_count * 2 + 1
+        np.testing.assert_allclose(
+            first_observations[command_start: command_start + 3],
+            np.zeros((3,), dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            second_observations[command_start: command_start + 3],
+            np.zeros((3,), dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            third_observations[command_start: command_start + 3],
+            np.array([0.8, -0.4, 0.2], dtype=np.float32),
+        )
+
+    def test_step_arms_zero_command_window_when_entering_policy_control(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+
+        with mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+                dry_run=True,
+                policy_entry_zero_command_steps=3,
+            )
+            robot.state = locomotion_runtime_module.LocomotionControlState.INITIALIZING
+            robot.initialization_progress = 1.0
+            robot.active_initialization_positions[:] = specification.initialization_positions
+            robot.active_initialization_label = "policy_entry"
+            robot.actuators.measurements_ready = True
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+
+            with mock.patch.object(
+                robot,
+                "_get_command",
+                return_value=SimpleNamespace(
+                    requested_state=locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL,
+                    velocity_x=0.6,
+                    velocity_y=-0.3,
+                    velocity_yaw=0.1,
+                ),
+            ):
+                observations = robot.step(np.zeros((specification.joint_count,), dtype=np.float32))
+
+            robot.shutdown()
+
+        command_start = 7 + specification.joint_count * 2 + 1
+        self.assertEqual(robot.state, locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL)
+        np.testing.assert_allclose(observations[command_start: command_start + 3], np.zeros((3,), dtype=np.float32))
+        self.assertEqual(robot._policy_entry_zero_command_steps_remaining, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

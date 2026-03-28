@@ -26,6 +26,7 @@ class LocomotionRobot:
     """组合传感器、命令源和执行器通信的 locomotion 运行时。"""
 
     _POLICY_ENTRY_GATE_MAX_ABS_DELTA_DEG = 10.0
+    _POLICY_ENTRY_ZERO_COMMAND_STEPS = 25
 
     def __init__(
         self,
@@ -40,12 +41,14 @@ class LocomotionRobot:
         imu_read_timeout: float = 0.01,
         imu_wait_timeout: float = 2.0,
         require_imu_ready: bool = True,
+        policy_entry_zero_command_steps: int = _POLICY_ENTRY_ZERO_COMMAND_STEPS,
     ) -> None:
         self.specification = specification or build_default_locomotion_robot_specification()
         self.calibration_store = calibration_store or CalibrationStore()
         self.dry_run = dry_run
         self.imu_wait_timeout = float(imu_wait_timeout)
         self.require_imu_ready = require_imu_ready
+        self.policy_entry_zero_command_steps = max(0, int(policy_entry_zero_command_steps))
 
         position_offsets = self.calibration_store.load_position_offsets(
             self.specification.joint_count)
@@ -80,6 +83,7 @@ class LocomotionRobot:
         self.active_initialization_positions = self.specification.initialization_positions.copy()
         self.active_initialization_label = "policy_entry"
         self._policy_request_blocked = False
+        self._policy_entry_zero_command_steps_remaining = 0
         self._raw_requested_state = LocomotionControlState.INVALID
         self.lowlevel_states = np.zeros(
             (self.specification.observation_size,), dtype=np.float32)
@@ -266,6 +270,11 @@ class LocomotionRobot:
             f"last_timestamp={snapshot.timestamp:.6f}"
         )
 
+    def _arm_policy_entry_zero_command_window(self) -> None:
+        if self.policy_entry_zero_command_steps <= 0:
+            return
+        self._policy_entry_zero_command_steps_remaining = self.policy_entry_zero_command_steps
+
     def get_observations(self) -> np.ndarray:
         imu_quaternion = self.lowlevel_states[0:4]
         imu_angular_velocity = self.lowlevel_states[4:7]
@@ -297,9 +306,13 @@ class LocomotionRobot:
             self._policy_request_blocked = False
         self._update_requested_state(command.requested_state)
         mode[0] = int(self.requested_state)
-        velocity_commands[0] = command.velocity_x
-        velocity_commands[1] = command.velocity_y
-        velocity_commands[2] = command.velocity_yaw
+        if self._policy_entry_zero_command_steps_remaining > 0:
+            velocity_commands[:] = 0.0
+            self._policy_entry_zero_command_steps_remaining -= 1
+        else:
+            velocity_commands[0] = command.velocity_x
+            velocity_commands[1] = command.velocity_y
+            velocity_commands[2] = command.velocity_yaw
 
         return self.lowlevel_states
 
@@ -313,6 +326,7 @@ class LocomotionRobot:
         if self.dry_run or not self.actuators.measurements_ready:
             self.actuators.refresh_measurements()
 
+        previous_state = self.state
         requested_state, initialization_positions, restart_initialization = (
             self._resolve_initialization_cycle_inputs()
         )
@@ -338,6 +352,11 @@ class LocomotionRobot:
         self.initialization_progress = result.initialization_progress
         self.starting_positions[:] = result.starting_positions
         self.actuators.joint_position_target[:] = result.joint_position_target
+        if (
+            previous_state != LocomotionControlState.POLICY_CONTROL
+            and result.state == LocomotionControlState.POLICY_CONTROL
+        ):
+            self._arm_policy_entry_zero_command_window()
 
         if not self.dry_run:
             if result.enter_position_mode:
