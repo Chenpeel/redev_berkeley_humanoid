@@ -23,6 +23,14 @@ inline uint8_t get_device_id(uint32_t can_id) {
   return can_id & DEVICE_ID_MSK;
 }
 
+inline uint8_t get_func_id(uint32_t can_id) {
+  return (can_id & FUNC_ID_MSK) >> FUNC_ID_POS;
+}
+
+inline bool matches_can_frame(uint32_t can_id, uint8_t device_id, uint8_t func_id) {
+  return get_device_id(can_id) == device_id && get_func_id(can_id) == func_id;
+}
+
 
 class MotorController {
   public:
@@ -98,11 +106,11 @@ private:
     SocketCan *bus;
     size_t device_id;
 
-    float position_measured;
-    float velocity_measured;
+    float position_measured = 0.0f;
+    float velocity_measured = 0.0f;
 
-    float position_target;
-    float velocity_target;
+    float position_target = 0.0f;
+    float velocity_target = 0.0f;
 
     float read_parameter_f32(Parameter param_id);
     int32_t read_parameter_i32(Parameter param_id);

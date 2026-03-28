@@ -3,6 +3,15 @@
 #include "motor_controller.h"
 #include "motor_controller_conf.h"
 
+#include <array>
+#include <chrono>
+
+namespace {
+
+constexpr double kPdoReadTimeoutSeconds = 0.001;
+
+}  // namespace
+
 
 MotorController::MotorController(SocketCan *bus, size_t device_id) : bus(bus), device_id(device_id) {
 }
@@ -19,7 +28,8 @@ void MotorController::ping() {
   bus->write(&tx_frame);
   
   // wait for response
-  can_frame rx_frame = bus->read();
+  can_frame rx_frame{};
+  bus->read(&rx_frame);
 
   // if (get_device_id(rx_frame.can_id) == device_id && get_func_id(rx_frame.can_id) == FUNC_PING) {
   //   printf("Received ping response from motor joint %d\n", (int)joint->device_id);
@@ -67,8 +77,9 @@ float MotorController::read_parameter_f32(Parameter param_id) {
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
   bus->write(&tx_frame);
 
-  can_frame rx_frame = bus->read();
-  if (get_device_id(rx_frame.can_id) == device_id) {
+  can_frame rx_frame{};
+  if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
+      matches_can_frame(rx_frame.can_id, device_id, FUNC_TRANSMIT_SDO)) {
     return *((float *)(rx_frame.data));
   }
   return 0;
@@ -82,8 +93,9 @@ int32_t MotorController::read_parameter_i32(Parameter param_id) {
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
   bus->write(&tx_frame);
 
-  can_frame rx_frame = bus->read();
-  if (get_device_id(rx_frame.can_id) == device_id) {
+  can_frame rx_frame{};
+  if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
+      matches_can_frame(rx_frame.can_id, device_id, FUNC_TRANSMIT_SDO)) {
     return *((int32_t *)(rx_frame.data));
   }
   return 0;
@@ -97,8 +109,9 @@ uint32_t MotorController::read_parameter_u32(Parameter param_id) {
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
   bus->write(&tx_frame);
 
-  can_frame rx_frame = bus->read();
-  if (get_device_id(rx_frame.can_id) == device_id) {
+  can_frame rx_frame{};
+  if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
+      matches_can_frame(rx_frame.can_id, device_id, FUNC_TRANSMIT_SDO)) {
     return *((uint32_t *)(rx_frame.data));
   }
   return 0;
@@ -345,10 +358,24 @@ void MotorController::set_encoder_velocity_bandwidth(float bandwidth_hz, float e
 
 
 void MotorController::read_pdo_2() {
-  can_frame rx_frame = bus->read();
-  if (get_device_id(rx_frame.can_id) == device_id) {
+  can_frame rx_frame{};
+  if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_PDO_2, kPdoReadTimeoutSeconds, false) &&
+      matches_can_frame(rx_frame.can_id, device_id, FUNC_TRANSMIT_PDO_2)) {
     this->position_measured = *((float *)rx_frame.data + 0);
     this->velocity_measured = *((float *)rx_frame.data + 1);
+    return;
+  }
+  static std::array<double, 128> last_warning_timestamp_seconds = {0.0};
+  const size_t warning_index =
+      device_id < last_warning_timestamp_seconds.size()
+          ? device_id
+          : (last_warning_timestamp_seconds.size() - 1);
+  const double now_seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  if (now_seconds - last_warning_timestamp_seconds[warning_index] >= 1.0)
+  {
+    printf("[WARN] <MotorController>: Timeout waiting for PDO2 from device %d\n", (int)device_id);
+    last_warning_timestamp_seconds[warning_index] = now_seconds;
   }
 }
 

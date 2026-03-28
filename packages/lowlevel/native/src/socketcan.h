@@ -39,7 +39,9 @@
 
 #include <linux/can.h>
 #include <net/if.h>
+#include <cstdint>
 // Multi-threading
+#include <deque>
 #include <pthread.h>
 #include <string>
 
@@ -50,6 +52,7 @@
         ifreq interface_request_{};
         sockaddr_can address_{};
         pthread_t receiver_thread_id_{};
+        std::deque<can_frame> pending_frames_{};
 
     public:
         /**
@@ -84,6 +87,12 @@
         /** \brief Starts a new thread, that will wait for socket events.
          *
          */
-        can_frame read();
+        bool read(can_frame *frame, double timeout_seconds = 1.0, bool log_timeout = true);
+        bool read_matching(
+            can_frame *frame,
+            uint8_t device_id,
+            uint8_t func_id,
+            double timeout_seconds = 1.0,
+            bool log_timeout = true);
 
     };

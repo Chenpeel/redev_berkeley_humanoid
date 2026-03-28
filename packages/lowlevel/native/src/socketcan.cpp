@@ -36,6 +36,7 @@
 //
 #include "socketcan.h"
 
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <sys/ioctl.h>
@@ -101,6 +102,19 @@ void SocketCan::close()
 
 bool SocketCan::isOpen() const { return (sock_fd_ != -1); }
 
+namespace {
+
+bool can_id_matches(uint32_t can_id, uint8_t device_id, uint8_t func_id)
+{
+  constexpr uint32_t kDeviceIdMask = 0b1111111U;
+  constexpr uint32_t kFuncIdPosition = 7U;
+  constexpr uint32_t kFuncIdMask = (0b1111U << kFuncIdPosition);
+  return (can_id & kDeviceIdMask) == device_id &&
+         ((can_id & kFuncIdMask) >> kFuncIdPosition) == func_id;
+}
+
+}  // namespace
+
 void SocketCan::write(can_frame *frame) const
 {
   if (!isOpen())
@@ -112,30 +126,115 @@ void SocketCan::write(can_frame *frame) const
     std::cerr << "Unable to write: The " << interface_request_.ifr_name << " tx buffer may be full" << std::endl;
 }
 
-can_frame SocketCan::read()
+bool SocketCan::read(can_frame *frame, double timeout_seconds, bool log_timeout)
 {
-
+  if (frame == nullptr)
+  {
+    return false;
+  }
+  *frame = {};
+  if (!isOpen())
+  {
+    std::cerr << "Unable to read: Socket " << interface_request_.ifr_name << " not open" << std::endl;
+    return false;
+  }
   // Holds the set of descriptors, that 'select' shall monitor
   fd_set descriptors;
   // Highest file descriptor in set
   int maxfd = sock_fd_;
   // How long 'select' shall wait before returning with timeout
   timeval timeout{};
-  // Buffer to store incoming frame
-  can_frame rx_frame{};
-  // Run until termination signal received
-  timeout.tv_sec = 1; // Should be set each loop
+  if (timeout_seconds < 0.0)
+  {
+    timeout_seconds = 0.0;
+  }
+  timeout.tv_sec = static_cast<time_t>(timeout_seconds);
+  timeout.tv_usec = static_cast<suseconds_t>((timeout_seconds - timeout.tv_sec) * 1000000.0);
   // Clear descriptor set
   FD_ZERO(&descriptors);
   // Add socket descriptor
   FD_SET(sock_fd_, &descriptors);
   // Wait until timeout or activity on any descriptor
-  if (select(maxfd + 1, &descriptors, nullptr, nullptr, &timeout))
+  const int select_result = select(maxfd + 1, &descriptors, nullptr, nullptr, &timeout);
+  if (select_result > 0)
   {
-    ::read(sock_fd_, &rx_frame, CAN_MTU);
-    return rx_frame;
-  } else {  
-    printf("[ERROR] <SocketCan>: Timeout reading from socket\n");
-    return {};
+    if (::read(sock_fd_, frame, CAN_MTU) == -1)
+    {
+      std::cerr << "Unable to read: The " << interface_request_.ifr_name << " rx buffer may be empty" << std::endl;
+      *frame = {};
+      return false;
+    }
+    return true;
   }
+  if (select_result == 0)
+  {
+    if (log_timeout)
+    {
+      printf("[ERROR] <SocketCan>: Timeout reading from socket\n");
+    }
+    return false;
+  }
+  std::cerr << "Unable to read: select failed on " << interface_request_.ifr_name << std::endl;
+  return false;
+}
+
+bool SocketCan::read_matching(
+    can_frame *frame,
+    uint8_t device_id,
+    uint8_t func_id,
+    double timeout_seconds,
+    bool log_timeout)
+{
+  if (frame == nullptr)
+  {
+    return false;
+  }
+
+  for (auto iterator = pending_frames_.begin(); iterator != pending_frames_.end(); ++iterator)
+  {
+    if (can_id_matches(iterator->can_id, device_id, func_id))
+    {
+      *frame = *iterator;
+      pending_frames_.erase(iterator);
+      return true;
+    }
+  }
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::duration<double>(timeout_seconds);
+  while (true)
+  {
+    const auto now = std::chrono::steady_clock::now();
+    const double remaining_seconds =
+        std::chrono::duration<double>(deadline - now).count();
+    if (remaining_seconds <= 0.0)
+    {
+      break;
+    }
+
+    can_frame rx_frame{};
+    if (!read(&rx_frame, remaining_seconds, false))
+    {
+      break;
+    }
+
+    if (can_id_matches(rx_frame.can_id, device_id, func_id))
+    {
+      *frame = rx_frame;
+      return true;
+    }
+
+    pending_frames_.push_back(rx_frame);
+  }
+
+  if (log_timeout)
+  {
+    printf(
+        "[WARN] <SocketCan>: Timeout waiting for device %u func %u on %s\n",
+        device_id,
+        func_id,
+        interface_request_.ifr_name);
+  }
+  *frame = {};
+  return false;
 }
