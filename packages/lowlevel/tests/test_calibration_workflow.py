@@ -28,9 +28,18 @@ class CalibrationWorkflowTests(unittest.TestCase):
             def stop(self) -> None:
                 captured["command_stopped"] = True
 
+        class FakeCaptureResult:
+            def __init__(self, offsets: np.ndarray) -> None:
+                self.position_offsets = np.asarray(offsets, dtype=np.float32)
+
+            def build_metadata(self, specification: object) -> dict[str, object]:
+                captured["metadata_specification"] = specification
+                return {"schema_version": 2}
+
         class FakeStore:
-            def save_position_offsets(self, offsets: np.ndarray) -> str:
+            def save_position_offsets(self, offsets: np.ndarray, *, metadata: dict[str, object] | None = None) -> str:
                 captured["saved_offsets"] = np.asarray(offsets, dtype=np.float32)
+                captured["saved_metadata"] = metadata
                 return "artifacts/calibration.yaml"
 
         with (
@@ -39,8 +48,8 @@ class CalibrationWorkflowTests(unittest.TestCase):
             mock.patch.object(calibration_workflow, "CalibrationStore", FakeStore),
             mock.patch.object(
                 calibration_workflow,
-                "capture_calibration_offsets",
-                side_effect=lambda specification, *_args: specification.initialization_positions,
+                "capture_calibration_result",
+                side_effect=lambda specification, *_args: FakeCaptureResult(specification.initialization_positions),
             ),
         ):
             calibration_workflow.run_joint_calibration(left_leg_bus="can2", right_leg_bus="can3")
@@ -60,6 +69,7 @@ class CalibrationWorkflowTests(unittest.TestCase):
             captured["saved_offsets"],
             specification.initialization_positions,
         )
+        self.assertEqual(captured["saved_metadata"], {"schema_version": 2})
 
     def test_run_joint_calibration_prints_reference_pose_note(self) -> None:
         class FakeActuatorArray:
@@ -77,8 +87,15 @@ class CalibrationWorkflowTests(unittest.TestCase):
             def stop(self) -> None:
                 return None
 
+        class FakeCaptureResult:
+            def __init__(self, offsets: np.ndarray) -> None:
+                self.position_offsets = np.asarray(offsets, dtype=np.float32)
+
+            def build_metadata(self, specification: object) -> dict[str, object]:
+                return {"schema_version": 2}
+
         class FakeStore:
-            def save_position_offsets(self, offsets: np.ndarray) -> str:
+            def save_position_offsets(self, offsets: np.ndarray, *, metadata: dict[str, object] | None = None) -> str:
                 return "artifacts/calibration.yaml"
 
         stdout = io.StringIO()
@@ -89,8 +106,8 @@ class CalibrationWorkflowTests(unittest.TestCase):
                 mock.patch.object(calibration_workflow, "CalibrationStore", FakeStore),
                 mock.patch.object(
                     calibration_workflow,
-                    "capture_calibration_offsets",
-                    return_value=np.zeros((12,), dtype=np.float32),
+                    "capture_calibration_result",
+                    return_value=FakeCaptureResult(np.zeros((12,), dtype=np.float32)),
                 ),
             ):
                 calibration_workflow.run_joint_calibration()
@@ -123,7 +140,7 @@ class CalibrationWorkflowTests(unittest.TestCase):
                     mock.patch.object(calibration_workflow, "GamepadCommandSource", FakeCommandSource),
                     mock.patch.object(
                         calibration_workflow,
-                        "capture_calibration_offsets",
+                        "capture_calibration_result",
                         side_effect=RuntimeError("hardware read failed"),
                     ),
                 ):

@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from berkeley_humanoid_lite_lowlevel.robot import (
-    build_leg_locomotion_robot_specification,
-    capture_calibration_offsets,
-)
-from berkeley_humanoid_lite_lowlevel.robot.calibration import CalibrationStore
+from berkeley_humanoid_lite_lowlevel.robot import build_leg_locomotion_robot_specification
+from berkeley_humanoid_lite_lowlevel.robot.calibration import CalibrationStore, capture_calibration_result
 from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandSource
 from berkeley_humanoid_lite_lowlevel.robot.joint_transport import LocomotionActuatorArray
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
@@ -47,7 +44,7 @@ def run_joint_calibration(
         command_source = GamepadCommandSource()
         command_source.start()
         try:
-            position_offsets = capture_calibration_offsets(
+            calibration_result = capture_calibration_result(
                 specification,
                 actuator_array,
                 command_source,
@@ -59,7 +56,10 @@ def run_joint_calibration(
             print("  2. Confirm the motors are powered and the robot is connected")
             print("  3. Confirm no other process is already using the CAN buses")
             raise
-        calibration_path = CalibrationStore().save_position_offsets(position_offsets)
+        calibration_path = CalibrationStore().save_position_offsets(
+            calibration_result.position_offsets,
+            metadata=calibration_result.build_metadata(specification),
+        )
         print(f"saved calibration to {calibration_path}")
     finally:
         if command_source is not None:

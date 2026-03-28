@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import time
+from collections import deque
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -26,6 +29,35 @@ class ActuatorArray(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class CalibrationCaptureResult:
+    position_offsets: np.ndarray
+    averaged_readings: np.ndarray
+    stddev_readings: np.ndarray
+    reference_delta_deg: np.ndarray
+    stddev_deg: np.ndarray
+    sample_count: int
+    worst_reference_joint_name: str
+    max_abs_reference_delta_deg: float
+    least_stable_joint_name: str
+    max_stddev_deg: float
+
+    def build_metadata(self, specification: LocomotionRobotSpecification) -> dict[str, object]:
+        return {
+            "schema_version": 2,
+            "joint_names": list(specification.joint_names),
+            "reference_positions": [float(value) for value in specification.calibration_reference_positions],
+            "capture": {
+                "sample_count": int(self.sample_count),
+                "max_abs_reference_delta_deg": float(self.max_abs_reference_delta_deg),
+                "max_stddev_deg": float(self.max_stddev_deg),
+                "worst_reference_joint": self.worst_reference_joint_name,
+                "least_stable_joint": self.least_stable_joint_name,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        }
+
+
 class CalibrationStore:
     def __init__(self, calibration_path: str | Path | None = None) -> None:
         self.calibration_path = get_calibration_path() if calibration_path is None else Path(calibration_path)
@@ -40,10 +72,18 @@ class CalibrationStore:
             raise ValueError("标定文件中的 position_offsets 长度与关节数不一致。")
         return position_offsets
 
-    def save_position_offsets(self, position_offsets: np.ndarray) -> Path:
+    def save_position_offsets(
+        self,
+        position_offsets: np.ndarray,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> Path:
         output_path = ensure_parent_directory(self.calibration_path)
+        config = {"position_offsets": [float(offset) for offset in position_offsets]}
+        if metadata is not None:
+            config.update(metadata)
         OmegaConf.save(
-            config=OmegaConf.create({"position_offsets": [float(offset) for offset in position_offsets]}),
+            config=OmegaConf.create(config),
             f=output_path,
         )
         return output_path
@@ -117,17 +157,83 @@ def _ensure_initial_position_measurements(actuator_array: ActuatorArray) -> None
     )
 
 
-def capture_calibration_offsets(
+def _build_capture_result(
+    specification: LocomotionRobotSpecification,
+    sample_window: deque[np.ndarray],
+) -> CalibrationCaptureResult:
+    sample_matrix = np.stack(tuple(sample_window), axis=0).astype(np.float32, copy=False)
+    averaged_readings = sample_matrix.mean(axis=0)
+    stddev_readings = sample_matrix.std(axis=0)
+    reference_delta_deg = np.rad2deg(averaged_readings - specification.calibration_reference_positions).astype(
+        np.float32,
+        copy=False,
+    )
+    stddev_deg = np.rad2deg(stddev_readings).astype(np.float32, copy=False)
+    if specification.joint_count > 0:
+        worst_reference_index = int(np.argmax(np.abs(reference_delta_deg)))
+        worst_reference_joint_name = specification.joint_names[worst_reference_index]
+        least_stable_index = int(np.argmax(stddev_deg))
+        least_stable_joint_name = specification.joint_names[least_stable_index]
+    else:
+        worst_reference_joint_name = ""
+        least_stable_joint_name = ""
+
+    return CalibrationCaptureResult(
+        position_offsets=compute_position_offsets(
+            averaged_readings,
+            specification.calibration_reference_positions,
+        ),
+        averaged_readings=averaged_readings.astype(np.float32, copy=False),
+        stddev_readings=stddev_readings.astype(np.float32, copy=False),
+        reference_delta_deg=reference_delta_deg,
+        stddev_deg=stddev_deg,
+        sample_count=int(sample_matrix.shape[0]),
+        worst_reference_joint_name=worst_reference_joint_name,
+        max_abs_reference_delta_deg=float(np.max(np.abs(reference_delta_deg))) if reference_delta_deg.size else 0.0,
+        least_stable_joint_name=least_stable_joint_name,
+        max_stddev_deg=float(np.max(stddev_deg)) if stddev_deg.size else 0.0,
+    )
+
+
+def _validate_capture_result(
+    result: CalibrationCaptureResult,
+    *,
+    required_sample_count: int,
+    max_stddev_deg: float,
+) -> None:
+    if result.sample_count < required_sample_count:
+        raise RuntimeError(
+            "Calibration capture ended before the stable sample window filled. "
+            f"Need {required_sample_count} samples, got {result.sample_count}."
+        )
+    if result.max_stddev_deg > max_stddev_deg:
+        raise RuntimeError(
+            "Calibration pose is not stable enough to save. "
+            f"least_stable_joint={result.least_stable_joint_name} "
+            f"max_stddev_deg={result.max_stddev_deg:.2f} "
+            f"limit={max_stddev_deg:.2f}"
+        )
+
+
+def capture_calibration_result(
     specification: LocomotionRobotSpecification,
     actuator_array: ActuatorArray,
     command_source: CommandSource,
     polling_interval_seconds: float = 0.05,
-) -> np.ndarray:
+    capture_window_size: int = 20,
+    max_stddev_deg: float = 1.0,
+) -> CalibrationCaptureResult:
     # 这个流程记录的是“校准参考位姿”下的原始读数。
     # 操作者应该把机器人摆到期望的 calibration reference pose，
     # 而不是反复去找每个关节能到达的最大机械行程。
-    limit_readings = actuator_array.read_positions()
+    if capture_window_size <= 0:
+        raise ValueError("capture_window_size 必须为正数。")
+
+    initial_readings = actuator_array.read_positions()
     _ensure_initial_position_measurements(actuator_array)
+    sample_window: deque[np.ndarray] = deque(maxlen=int(capture_window_size))
+    sample_window.append(np.asarray(initial_readings, dtype=np.float32).copy())
+
     print("Calibration reference pose guide:")
     for joint_name, reference_position, selector in zip(
         specification.joint_names,
@@ -142,32 +248,73 @@ def capture_calibration_offsets(
     print("Selector note: min/max only selects the signed reading to retain for that reference pose.")
     print("Do not search for the farthest mechanical limit.")
     print("Switch the gamepad back to IDLE only after the robot is holding the intended calibration pose.")
+    print(
+        "Calibration save gate:",
+        f"samples={capture_window_size}",
+        f"max_stddev_deg<={max_stddev_deg:.2f}",
+    )
+    print("Note: large candidate offsets are expected before calibration and do not imply a bad pose by themselves.")
 
     print("initial readings before moving to calibration reference poses:")
-    print([f"{reading:.2f}" for reading in limit_readings])
+    print([f"{reading:.2f}" for reading in initial_readings])
 
     while (
         getattr(command_source.snapshot(), "requested_state", LocomotionControlState.INVALID)
         != LocomotionControlState.IDLE
     ):
         joint_readings = actuator_array.read_positions()
-        limit_readings = update_limit_readings(
-            limit_readings,
-            joint_readings,
-            specification.calibration_limit_selectors,
+        sample_window.append(np.asarray(joint_readings, dtype=np.float32).copy())
+        capture_result = _build_capture_result(
+            specification,
+            sample_window,
         )
-        print(time.time(), [f"{reading:.2f}" for reading in limit_readings])
+        print(
+            f"{time.time():.3f}",
+            f"samples={capture_result.sample_count}/{capture_window_size}",
+            f"worst_reference_joint={capture_result.worst_reference_joint_name}",
+            f"max_abs_reference_delta_deg={capture_result.max_abs_reference_delta_deg:.2f}",
+            f"least_stable_joint={capture_result.least_stable_joint_name}",
+            f"max_stddev_deg={capture_result.max_stddev_deg:.2f}",
+        )
+        print("candidate offset delta[deg]:", [f"{value:+.2f}" for value in capture_result.reference_delta_deg])
         time.sleep(polling_interval_seconds)
 
-    offsets = compute_position_offsets(
-        limit_readings,
-        specification.calibration_reference_positions,
+    capture_result = _build_capture_result(
+        specification,
+        sample_window,
+    )
+    _validate_capture_result(
+        capture_result,
+        required_sample_count=int(capture_window_size),
+        max_stddev_deg=float(max_stddev_deg),
     )
 
-    print("final readings captured for calibration reference poses:")
-    print([f"{limit_reading:.4f}" for limit_reading in limit_readings])
+    print("final averaged readings captured for calibration reference poses:")
+    print([f"{reading:.4f}" for reading in capture_result.averaged_readings])
+    print("final stddev[deg]:")
+    print([f"{value:.4f}" for value in capture_result.stddev_deg])
+    print("final candidate offset delta[deg]:")
+    print([f"{value:+.4f}" for value in capture_result.reference_delta_deg])
 
     print("offsets:")
-    print([f"{offset:.4f}" for offset in offsets])
+    print([f"{offset:.4f}" for offset in capture_result.position_offsets])
 
-    return offsets
+    return capture_result
+
+
+def capture_calibration_offsets(
+    specification: LocomotionRobotSpecification,
+    actuator_array: ActuatorArray,
+    command_source: CommandSource,
+    polling_interval_seconds: float = 0.05,
+    capture_window_size: int = 20,
+    max_stddev_deg: float = 1.0,
+) -> np.ndarray:
+    return capture_calibration_result(
+        specification,
+        actuator_array,
+        command_source,
+        polling_interval_seconds=polling_interval_seconds,
+        capture_window_size=capture_window_size,
+        max_stddev_deg=max_stddev_deg,
+    ).position_offsets
