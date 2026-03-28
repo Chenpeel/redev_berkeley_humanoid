@@ -3,6 +3,9 @@
 #pragma once
 
 
+#include <array>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <stdio.h>
 #include <yaml-cpp/yaml.h>
@@ -102,7 +105,7 @@ class RealHumanoid {
     float position_measured[N_JOINTS];
     float velocity_measured[N_JOINTS];
 
-    float starting_positions[N_JOINTS];
+    float starting_positions[N_JOINTS] = {0};
 
     float position_offsets[N_JOINTS] = {0};
 
@@ -199,6 +202,8 @@ class RealHumanoid {
 
     UDP udp_joystick;
 
+    std::mutex control_input_mutex_;
+
     /* Policy stuff */
     // torch::Tensor policy_observations;
     // torch::Tensor policy_actions;
@@ -209,7 +214,7 @@ class RealHumanoid {
     /**
      * The control loop that communicates with the hardware.
      *
-     * This loop will run at 100 Hz.
+     * This loop will run at 250 Hz.
      *
      * On each loop iteration, it will perform the following:
      *  1. collects the action terms from action array set by either UDP communication or the policy.

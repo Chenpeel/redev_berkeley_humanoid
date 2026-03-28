@@ -1,6 +1,7 @@
 // Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
 #include <filesystem>
+#include <cstring>
 #include <stdexcept>
 #include <sys/ioctl.h>
 #include <utility>
@@ -95,6 +96,7 @@ RealHumanoid::RealHumanoid(
     position_target[i] = 0;
     position_measured[i] = 0;
     velocity_measured[i] = 0;
+    starting_positions[i] = 0;
   }
 
   for (size_t i = 0; i < N_LOWLEVEL_COMMANDS; i += 1)
@@ -159,6 +161,20 @@ RealHumanoid::~RealHumanoid()
 
 void RealHumanoid::control_loop()
 {
+  float command_snapshot[N_LOWLEVEL_COMMANDS] = {0};
+  ControllerState requested_state = STATE_IDLE;
+  float stick_command_velocity_x = 0.0f;
+  float stick_command_velocity_y = 0.0f;
+  float stick_command_velocity_yaw = 0.0f;
+  {
+    std::lock_guard<std::mutex> lock(control_input_mutex_);
+    requested_state = next_state;
+    std::memcpy(command_snapshot, lowlevel_commands, sizeof(command_snapshot));
+    stick_command_velocity_x = stick_command_velocity_x_;
+    stick_command_velocity_y = stick_command_velocity_y_;
+    stick_command_velocity_yaw = stick_command_velocity_yaw_;
+  }
+
   switch (state)
   {
   case STATE_IDLE:
@@ -169,17 +185,17 @@ void RealHumanoid::control_loop()
     {
       position_target[i] = position_measured[i];
     }
-    if (next_state == STATE_RL_INIT)
+    if (requested_state == STATE_RL_INIT || requested_state == STATE_RL_RUNNING)
     {
       printf("Switching to RL initialization mode\n");
-      state = next_state;
+      state = STATE_RL_INIT;
 
       for (int i = 0; i < N_JOINTS; i += 1)
       {
+        starting_positions[i] = position_target[i];
         usleep(5);
         joint_ptrs[i]->feed();
         joint_ptrs[i]->set_mode(MODE_POSITION);
-        // starting_positions[i] = position_target[i];
       }
       init_percentage = 0.0;
     }
@@ -194,22 +210,22 @@ void RealHumanoid::control_loop()
       init_percentage += 1 / 200.0;
       init_percentage = init_percentage < 1.0 ? init_percentage : 1.0;
 
-      for (size_t i = 0; i < 12; i += 1)
+      for (size_t i = 0; i < N_JOINTS; i += 1)
       {
         position_target[i] = linear_interpolate(starting_positions[i], rl_init_positions[i], init_percentage);
       }
     }
     else
     {
-      if (next_state == STATE_RL_RUNNING)
+      if (requested_state == STATE_RL_RUNNING)
       {
         printf("Switching to RL running mode\n");
-        state = next_state;
+        state = requested_state;
       }
-      if (next_state == STATE_IDLE)
+      if (requested_state == STATE_IDLE)
       {
         printf("Switching to idle mode\n");
-        state = next_state;
+        state = requested_state;
 
         for (int i = 0; i < N_JOINTS; i += 1)
         {
@@ -224,13 +240,13 @@ void RealHumanoid::control_loop()
     /* In this state, the robot will follow the policy */
     for (int i = 0; i < N_LOWLEVEL_COMMANDS; i += 1)
     {
-      position_target[i] = lowlevel_commands[i];
+      position_target[i] = command_snapshot[i];
     }
 
-    if (next_state == STATE_IDLE)
+    if (requested_state == STATE_IDLE)
     {
       printf("Switching to idle mode\n");
-      state = next_state;
+      state = requested_state;
 
       for (int i = 0; i < N_JOINTS; i += 1)
       {
@@ -303,9 +319,9 @@ void RealHumanoid::control_loop()
   lowlevel_states[31] = state;
 
   /* command velocity */
-  lowlevel_states[32] = stick_command_velocity_x_;
-  lowlevel_states[33] = stick_command_velocity_y_;
-  lowlevel_states[34] = stick_command_velocity_yaw_;
+  lowlevel_states[32] = stick_command_velocity_x;
+  lowlevel_states[33] = stick_command_velocity_y;
+  lowlevel_states[34] = stick_command_velocity_yaw;
 
   // execute every 4 control loops
   if (control_loop_count >= (int)std::round(config_policy_dt_ / config_control_dt_))
@@ -360,13 +376,22 @@ void RealHumanoid::keyboard_loop()
     switch (c)
     {
     case 'r':
-      next_state = STATE_RL_INIT;
+      {
+        std::lock_guard<std::mutex> lock(control_input_mutex_);
+        next_state = STATE_RL_INIT;
+      }
       break;
     case 't':
-      next_state = STATE_RL_RUNNING;
+      {
+        std::lock_guard<std::mutex> lock(control_input_mutex_);
+        next_state = STATE_RL_RUNNING;
+      }
       break;
     case 'q':
-      next_state = STATE_IDLE;
+      {
+        std::lock_guard<std::mutex> lock(control_input_mutex_);
+        next_state = STATE_IDLE;
+      }
       break;
     }
   }
@@ -388,25 +413,35 @@ void RealHumanoid::joystick_loop()
   }
 
   uint8_t command_mode = udp_buffer[0];
-  stick_command_velocity_x_ = *(float *)(udp_buffer + 1);
-  stick_command_velocity_y_ = *(float *)(udp_buffer + 5);
-  stick_command_velocity_yaw_ = *(float *)(udp_buffer + 9);
+  float stick_command_velocity_x = 0.0f;
+  float stick_command_velocity_y = 0.0f;
+  float stick_command_velocity_yaw = 0.0f;
+  std::memcpy(&stick_command_velocity_x, udp_buffer + 1, sizeof(float));
+  std::memcpy(&stick_command_velocity_y, udp_buffer + 5, sizeof(float));
+  std::memcpy(&stick_command_velocity_yaw, udp_buffer + 9, sizeof(float));
 
-  if (command_mode != 0)
   {
-    switch (command_mode)
+    std::lock_guard<std::mutex> lock(control_input_mutex_);
+    stick_command_velocity_x_ = stick_command_velocity_x;
+    stick_command_velocity_y_ = stick_command_velocity_y;
+    stick_command_velocity_yaw_ = stick_command_velocity_yaw;
+
+    if (command_mode != 0)
     {
-    case 1:
-      next_state = STATE_IDLE;
-      break;
-    case 2:
-      next_state = STATE_RL_INIT;
-      break;
-    case 3:
-      next_state = STATE_RL_RUNNING;
-      break;
-    default:
-      next_state = STATE_IDLE;
+      switch (command_mode)
+      {
+      case 1:
+        next_state = STATE_IDLE;
+        break;
+      case 2:
+        next_state = STATE_RL_INIT;
+        break;
+      case 3:
+        next_state = STATE_RL_RUNNING;
+        break;
+      default:
+        next_state = STATE_IDLE;
+      }
     }
   }
 }
@@ -426,11 +461,18 @@ void RealHumanoid::policy_forward()
 void RealHumanoid::udp_recv()
 {
   size_t expected_bytes = sizeof(float) * N_LOWLEVEL_COMMANDS;
-  ssize_t actual_bytes = recvfrom(udp.sockfd, lowlevel_commands, expected_bytes, MSG_WAITALL, NULL, NULL);
+  float command_buffer[N_LOWLEVEL_COMMANDS] = {0};
+  ssize_t actual_bytes = recvfrom(udp.sockfd, command_buffer, expected_bytes, MSG_WAITALL, NULL, NULL);
 
   if (actual_bytes < 0 || actual_bytes != expected_bytes)
   {
     printf("[Error] <UDP> Error receiving: %s\n", strerror(errno));
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(control_input_mutex_);
+    std::memcpy(lowlevel_commands, command_buffer, sizeof(command_buffer));
   }
   // TODO: detect if the action is delayed
 }
@@ -441,6 +483,8 @@ void RealHumanoid::update_joints()
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
     joint_ptrs[i]->set_target_position((position_target[i] + position_offsets[i]) * joint_axis_directions[i]);
+    // native 低层当前只做位置控制，PDO2 的速度目标保持为零。
+    joint_ptrs[i]->set_target_velocity(0.0f);
   }
 
   joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT]->write_pdo_2();
