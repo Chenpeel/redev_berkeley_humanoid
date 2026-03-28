@@ -42,7 +42,10 @@ def advance_locomotion_cycle(context: LocomotionCycleContext) -> LocomotionCycle
     initialization_positions = np.asarray(context.initialization_positions, dtype=np.float32).copy()
 
     if context.state == LocomotionControlState.IDLE:
-        if context.requested_state == LocomotionControlState.INITIALIZING:
+        if context.requested_state in (
+            LocomotionControlState.INITIALIZING,
+            LocomotionControlState.POLICY_CONTROL,
+        ):
             return LocomotionCycleResult(
                 state=LocomotionControlState.INITIALIZING,
                 initialization_progress=0.0,

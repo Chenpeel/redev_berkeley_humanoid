@@ -134,6 +134,10 @@ class LocomotionRobot:
             return LocomotionCommand.zero()
         return self.command_source.snapshot()
 
+    def _update_requested_state(self, requested_state: LocomotionControlState) -> None:
+        if requested_state != LocomotionControlState.INVALID:
+            self.requested_state = requested_state
+
     def _wait_for_imu_ready(self) -> None:
         if self.imu is None or not self.require_imu_ready:
             return
@@ -176,11 +180,11 @@ class LocomotionRobot:
         joint_velocities[:] = self.actuators.joint_velocity_measured[:]
 
         command = self._get_command()
-        mode[0] = int(command.requested_state)
+        self._update_requested_state(command.requested_state)
+        mode[0] = int(self.requested_state)
         velocity_commands[0] = command.velocity_x
         velocity_commands[1] = command.velocity_y
         velocity_commands[2] = command.velocity_yaw
-        self.requested_state = command.requested_state
 
         return self.lowlevel_states
 

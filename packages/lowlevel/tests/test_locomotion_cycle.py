@@ -33,6 +33,29 @@ class LocomotionCycleTests(unittest.TestCase):
         np.testing.assert_allclose(result.joint_position_target, measured_positions)
         self.assertTrue(result.enter_position_mode)
 
+    def test_idle_policy_request_enters_initialization_mode_first(self) -> None:
+        measured_positions = np.array([0.2, -0.1], dtype=np.float32)
+
+        result = advance_locomotion_cycle(
+            LocomotionCycleContext(
+                state=LocomotionControlState.IDLE,
+                requested_state=LocomotionControlState.POLICY_CONTROL,
+                initialization_progress=0.3,
+                initialization_step=0.01,
+                starting_positions=np.zeros((2,), dtype=np.float32),
+                measured_positions=measured_positions,
+                policy_actions=np.array([0.9, -0.4], dtype=np.float32),
+                initialization_positions=np.array([0.0, 0.0], dtype=np.float32),
+            )
+        )
+
+        self.assertEqual(result.state, LocomotionControlState.INITIALIZING)
+        self.assertEqual(result.initialization_progress, 0.0)
+        np.testing.assert_allclose(result.starting_positions, measured_positions)
+        np.testing.assert_allclose(result.joint_position_target, measured_positions)
+        self.assertTrue(result.enter_position_mode)
+        self.assertFalse(result.enter_damping_mode)
+
     def test_initializing_interpolates_towards_initialization_positions(self) -> None:
         result = advance_locomotion_cycle(
             LocomotionCycleContext(

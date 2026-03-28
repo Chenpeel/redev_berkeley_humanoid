@@ -164,6 +164,51 @@ class LocomotionRuntimeTests(unittest.TestCase):
                 robot.reset()
             robot.shutdown()
 
+    def test_get_observations_latches_last_non_invalid_requested_state(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+
+        with mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+            )
+            command_sequence = [
+                SimpleNamespace(
+                    requested_state=locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL,
+                    velocity_x=0.3,
+                    velocity_y=-0.2,
+                    velocity_yaw=0.1,
+                ),
+                SimpleNamespace(
+                    requested_state=locomotion_runtime_module.LocomotionControlState.INVALID,
+                    velocity_x=0.0,
+                    velocity_y=0.0,
+                    velocity_yaw=0.0,
+                ),
+            ]
+
+            with mock.patch.object(robot, "_get_command", side_effect=command_sequence):
+                first_observations = robot.get_observations().copy()
+                second_observations = robot.get_observations().copy()
+
+            robot.shutdown()
+
+        command_mode_index = 7 + specification.joint_count * 2
+        self.assertEqual(
+            int(first_observations[command_mode_index]),
+            int(locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL),
+        )
+        self.assertEqual(
+            int(second_observations[command_mode_index]),
+            int(locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL),
+        )
+        self.assertEqual(
+            robot.requested_state,
+            locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
