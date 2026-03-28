@@ -112,6 +112,8 @@ private:
     float position_target = 0.0f;
     float velocity_target = 0.0f;
 
+    void clear_stale_replies();
+
     float read_parameter_f32(Parameter param_id);
     int32_t read_parameter_i32(Parameter param_id);
     uint32_t read_parameter_u32(Parameter param_id);

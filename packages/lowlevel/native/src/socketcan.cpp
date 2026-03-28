@@ -115,15 +115,19 @@ bool can_id_matches(uint32_t can_id, uint8_t device_id, uint8_t func_id)
 
 }  // namespace
 
-void SocketCan::write(can_frame *frame) const
+bool SocketCan::write(can_frame *frame) const
 {
   if (!isOpen())
   {
     std::cerr << "Unable to write: Socket " << interface_request_.ifr_name << " not open" << std::endl;
-    return;
+    return false;
   }
   if (::write(sock_fd_, frame, sizeof(can_frame)) == -1)
+  {
     std::cerr << "Unable to write: The " << interface_request_.ifr_name << " tx buffer may be full" << std::endl;
+    return false;
+  }
+  return true;
 }
 
 bool SocketCan::read(can_frame *frame, double timeout_seconds, bool log_timeout)
@@ -178,6 +182,17 @@ bool SocketCan::read(can_frame *frame, double timeout_seconds, bool log_timeout)
   return false;
 }
 
+size_t SocketCan::drain()
+{
+  size_t dropped_frames = 0;
+  can_frame frame{};
+  while (read(&frame, 0.0, false))
+  {
+    dropped_frames += 1;
+  }
+  return dropped_frames;
+}
+
 bool SocketCan::read_matching(
     can_frame *frame,
     uint8_t device_id,
@@ -188,16 +203,6 @@ bool SocketCan::read_matching(
   if (frame == nullptr)
   {
     return false;
-  }
-
-  for (auto iterator = pending_frames_.begin(); iterator != pending_frames_.end(); ++iterator)
-  {
-    if (can_id_matches(iterator->can_id, device_id, func_id))
-    {
-      *frame = *iterator;
-      pending_frames_.erase(iterator);
-      return true;
-    }
   }
 
   const auto deadline =
@@ -223,8 +228,6 @@ bool SocketCan::read_matching(
       *frame = rx_frame;
       return true;
     }
-
-    pending_frames_.push_back(rx_frame);
   }
 
   if (log_timeout)

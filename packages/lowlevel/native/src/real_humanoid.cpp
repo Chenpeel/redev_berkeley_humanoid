@@ -1,5 +1,6 @@
 // Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
+#include <chrono>
 #include <filesystem>
 #include <cstring>
 #include <stdexcept>
@@ -403,12 +404,39 @@ void RealHumanoid::joystick_loop()
 {
   size_t expected_bytes = 13;
   uint8_t udp_buffer[13];
-  ssize_t actual_bytes = recvfrom(udp_joystick.sockfd, udp_buffer, expected_bytes, MSG_WAITALL, NULL, NULL);
+  ssize_t actual_bytes = recvfrom(udp_joystick.sockfd, udp_buffer, expected_bytes, MSG_DONTWAIT, NULL, NULL);
 
-  if (actual_bytes < 0 || actual_bytes != expected_bytes)
+  if (actual_bytes < 0)
   {
-    printf("[Error] <UDPStick> Error receiving: %s\n", strerror(errno));
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+      return;
+    }
 
+    static double last_error_timestamp_seconds = 0.0;
+    const double now_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now_seconds - last_error_timestamp_seconds >= 1.0)
+    {
+      printf("[WARN] <UDPStick> Error receiving joystick packet: %s\n", strerror(errno));
+      last_error_timestamp_seconds = now_seconds;
+    }
+    return;
+  }
+
+  if (actual_bytes != expected_bytes)
+  {
+    static double last_size_warning_timestamp_seconds = 0.0;
+    const double now_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now_seconds - last_size_warning_timestamp_seconds >= 1.0)
+    {
+      printf(
+          "[WARN] <UDPStick>: Ignoring joystick packet with unexpected size %zd (expected %zu)\n",
+          actual_bytes,
+          expected_bytes);
+      last_size_warning_timestamp_seconds = now_seconds;
+    }
     return;
   }
 

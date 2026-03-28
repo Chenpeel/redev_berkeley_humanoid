@@ -40,8 +40,6 @@
 #include <linux/can.h>
 #include <net/if.h>
 #include <cstdint>
-// Multi-threading
-#include <deque>
 #include <pthread.h>
 #include <string>
 
@@ -52,7 +50,6 @@
         ifreq interface_request_{};
         sockaddr_can address_{};
         pthread_t receiver_thread_id_{};
-        std::deque<can_frame> pending_frames_{};
 
     public:
         /**
@@ -83,7 +80,7 @@
          *
          * \param frame referenced frame which you want to send.
          */
-        void write(can_frame* frame) const;
+        bool write(can_frame* frame) const;
         /** \brief Starts a new thread, that will wait for socket events.
          *
          */
@@ -94,5 +91,6 @@
             uint8_t func_id,
             double timeout_seconds = 1.0,
             bool log_timeout = true);
+        size_t drain();
 
     };

@@ -99,6 +99,41 @@ class CalibrationWorkflowTests(unittest.TestCase):
         self.assertIn("calibration reference pose", output)
         self.assertIn("not the mechanical limit", output)
 
+    def test_run_joint_calibration_prints_hardware_checks_on_failure(self) -> None:
+        class FakeActuatorArray:
+            def __init__(self, specification=None, position_offsets=None, **_: object) -> None:
+                self.specification = specification
+                self.position_offsets = np.asarray(position_offsets, dtype=np.float32)
+
+            def shutdown(self) -> None:
+                return None
+
+        class FakeCommandSource:
+            def start(self) -> None:
+                return None
+
+            def stop(self) -> None:
+                return None
+
+        stdout = io.StringIO()
+        with self.assertRaisesRegex(RuntimeError, "hardware read failed"):
+            with contextlib.redirect_stdout(stdout):
+                with (
+                    mock.patch.object(calibration_workflow, "LocomotionActuatorArray", FakeActuatorArray),
+                    mock.patch.object(calibration_workflow, "GamepadCommandSource", FakeCommandSource),
+                    mock.patch.object(
+                        calibration_workflow,
+                        "capture_calibration_offsets",
+                        side_effect=RuntimeError("hardware read failed"),
+                    ),
+                ):
+                    calibration_workflow.run_joint_calibration(left_leg_bus="can2", right_leg_bus="can3")
+
+        output = stdout.getvalue()
+        self.assertIn("Joint calibration failed", output)
+        self.assertIn("left=can2 right=can3", output)
+        self.assertIn("motors are powered", output)
+
 
 if __name__ == "__main__":
     unittest.main()

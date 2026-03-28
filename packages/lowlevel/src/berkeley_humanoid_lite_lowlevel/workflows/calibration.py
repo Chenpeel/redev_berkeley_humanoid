@@ -46,11 +46,19 @@ def run_joint_calibration(
         )
         command_source = GamepadCommandSource()
         command_source.start()
-        position_offsets = capture_calibration_offsets(
-            specification,
-            actuator_array,
-            command_source,
-        )
+        try:
+            position_offsets = capture_calibration_offsets(
+                specification,
+                actuator_array,
+                command_source,
+            )
+        except Exception as error:
+            print(f"[ERROR] Joint calibration failed: {error}")
+            print("Calibration checks:")
+            print(f"  1. Confirm CAN interfaces are up: left={left_leg_bus} right={right_leg_bus}")
+            print("  2. Confirm the motors are powered and the robot is connected")
+            print("  3. Confirm no other process is already using the CAN buses")
+            raise
         calibration_path = CalibrationStore().save_position_offsets(position_offsets)
         print(f"saved calibration to {calibration_path}")
     finally:

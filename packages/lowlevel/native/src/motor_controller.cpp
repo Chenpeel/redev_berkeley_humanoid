@@ -16,6 +16,10 @@ constexpr double kPdoReadTimeoutSeconds = 0.001;
 MotorController::MotorController(SocketCan *bus, size_t device_id) : bus(bus), device_id(device_id) {
 }
 
+void MotorController::clear_stale_replies() {
+  bus->drain();
+}
+
 
 void MotorController::ping() {
   printf("Pinging motor controller %d\n", (int)device_id);
@@ -75,7 +79,10 @@ float MotorController::read_parameter_f32(Parameter param_id) {
   tx_frame.len = 3;
   *((uint8_t *)(tx_frame.data)) = 0x02 << 5;
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
-  bus->write(&tx_frame);
+  clear_stale_replies();
+  if (!bus->write(&tx_frame)) {
+    return 0;
+  }
 
   can_frame rx_frame{};
   if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
@@ -91,7 +98,10 @@ int32_t MotorController::read_parameter_i32(Parameter param_id) {
   tx_frame.len = 3;
   *((uint8_t *)(tx_frame.data)) = 0x02 << 5;
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
-  bus->write(&tx_frame);
+  clear_stale_replies();
+  if (!bus->write(&tx_frame)) {
+    return 0;
+  }
 
   can_frame rx_frame{};
   if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
@@ -107,7 +117,10 @@ uint32_t MotorController::read_parameter_u32(Parameter param_id) {
   tx_frame.len = 3;
   *((uint8_t *)(tx_frame.data)) = 0x02 << 5;
   *((uint16_t *)(tx_frame.data + 1)) = param_id;
-  bus->write(&tx_frame);
+  clear_stale_replies();
+  if (!bus->write(&tx_frame)) {
+    return 0;
+  }
 
   can_frame rx_frame{};
   if (bus->read_matching(&rx_frame, device_id, FUNC_TRANSMIT_SDO) &&
@@ -386,6 +399,7 @@ void MotorController::write_pdo_2() {
   *((float *)tx_frame.data + 0) = this->position_target;
   *((float *)tx_frame.data + 1) = this->velocity_target;
 
+  clear_stale_replies();
   bus->write(&tx_frame);
 }
 
