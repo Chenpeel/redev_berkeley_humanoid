@@ -190,6 +190,7 @@ class LocomotionWorkflowTests(unittest.TestCase):
                 self.specification = SimpleNamespace(
                     joint_count=2,
                     joint_names=("joint_0", "joint_1"),
+                    standing_positions=np.array([0.1, -0.2], dtype=np.float32),
                     initialization_positions=np.array([0.25, -0.35], dtype=np.float32),
                 )
                 self.actuators = SimpleNamespace(
@@ -279,6 +280,8 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertIn("[DEBUG] offsets", output)
         self.assertIn("[DEBUG] raw_tgt", output)
         self.assertIn("[DEBUG] raw_meas", output)
+        self.assertIn("[DEBUG] stand_err", output)
+        self.assertIn("[DEBUG] stand_raw", output)
         self.assertIn("[DEBUG] init_err", output)
         self.assertIn("[DEBUG] init_raw", output)
         self.assertIn("[DEBUG] risk", output)

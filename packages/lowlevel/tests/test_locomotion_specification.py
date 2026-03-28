@@ -21,6 +21,7 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
         self.assertEqual(len(specification.mirrored_joint_pairs), 6)
         self.assertEqual(specification.joint_axis_directions.shape, (12,))
         self.assertEqual(specification.initialization_positions.shape, (12,))
+        self.assertEqual(specification.standing_positions.shape, (12,))
         self.assertEqual(specification.calibration_reference_positions.shape, (12,))
         self.assertEqual(len(specification.calibration_limit_selectors), 12)
         self.assertEqual(specification.joint_names[0], "left_hip_roll_joint")
@@ -49,12 +50,15 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
             specification.initialization_positions,
             expected_initialization_positions,
         )
-        self.assertFalse(
-            np.allclose(
-                specification.initialization_positions,
-                specification.calibration_reference_positions,
-            )
+        np.testing.assert_allclose(
+            specification.standing_positions,
+            np.array([0.0, 0.0, -0.1, 0.2, -0.1, 0.0, 0.0, 0.0, -0.1, 0.2, -0.1, 0.0], dtype=np.float32),
         )
+        np.testing.assert_allclose(
+            specification.calibration_reference_positions,
+            specification.standing_positions,
+        )
+        self.assertFalse(np.allclose(specification.initialization_positions, specification.standing_positions))
 
     def test_policy_default_joint_positions_match_source_rl_init_pose(self) -> None:
         specification = build_leg_locomotion_robot_specification()
@@ -79,7 +83,7 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
             self.assertFalse(
                 np.allclose(
                     leg_positions,
-                    specification.calibration_reference_positions,
+                    specification.standing_positions,
                 )
             )
 

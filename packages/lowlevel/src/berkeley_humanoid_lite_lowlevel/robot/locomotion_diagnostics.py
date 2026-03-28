@@ -20,11 +20,37 @@ class LocomotionDiagnosticSnapshot:
     offsets: np.ndarray
     raw_targets: np.ndarray
     raw_measured: np.ndarray
+    delta_to_standing: np.ndarray
+    raw_delta_to_standing: np.ndarray
     delta_to_initialization: np.ndarray
     raw_delta_to_initialization: np.ndarray
     dry_run: bool
     risk_joint_name: str
     risk_raw_delta_to_initialization: float
+    standing_risk_joint_name: str
+    risk_raw_delta_to_standing: float
+
+
+def _build_raw_pose_delta(
+    target_positions: np.ndarray,
+    measured: np.ndarray,
+    offsets: np.ndarray,
+    directions: np.ndarray,
+) -> np.ndarray:
+    raw_targets = (target_positions + offsets) * directions
+    raw_measured = (measured + offsets) * directions
+    return raw_targets - raw_measured
+
+
+def _find_risk_joint_name(
+    specification: LocomotionRobotSpecification,
+    raw_delta: np.ndarray,
+) -> tuple[str, float]:
+    if specification.joint_count == 0:
+        return "", 0.0
+
+    risk_index = int(np.argmax(np.abs(raw_delta)))
+    return specification.joint_names[risk_index], float(raw_delta[risk_index])
 
 
 def format_imu_debug_line(
@@ -71,22 +97,34 @@ def build_locomotion_diagnostic_snapshot(
     measured = np.asarray(joint_position_measured, dtype=np.float32)
     offsets = np.asarray(position_offsets, dtype=np.float32)
     directions = np.asarray(joint_axis_directions, dtype=np.float32)
+    standing_positions = np.asarray(specification.standing_positions, dtype=np.float32)
     initialization_positions = np.asarray(specification.initialization_positions, dtype=np.float32)
     velocity_command = np.asarray(command_velocity, dtype=np.float32)
 
     raw_targets = (targets + offsets) * directions
     raw_measured = (measured + offsets) * directions
+    delta_to_standing = standing_positions - measured
+    raw_delta_to_standing = _build_raw_pose_delta(
+        standing_positions,
+        measured,
+        offsets,
+        directions,
+    )
     delta_to_initialization = initialization_positions - measured
-    raw_initialization_targets = (initialization_positions + offsets) * directions
-    raw_delta_to_initialization = raw_initialization_targets - raw_measured
-
-    if specification.joint_count > 0:
-        risk_index = int(np.argmax(np.abs(raw_delta_to_initialization)))
-        risk_joint_name = specification.joint_names[risk_index]
-        risk_raw_delta = float(raw_delta_to_initialization[risk_index])
-    else:
-        risk_joint_name = ""
-        risk_raw_delta = 0.0
+    raw_delta_to_initialization = _build_raw_pose_delta(
+        initialization_positions,
+        measured,
+        offsets,
+        directions,
+    )
+    risk_joint_name, risk_raw_delta = _find_risk_joint_name(
+        specification,
+        raw_delta_to_initialization,
+    )
+    standing_risk_joint_name, standing_risk_raw_delta = _find_risk_joint_name(
+        specification,
+        raw_delta_to_standing,
+    )
 
     return LocomotionDiagnosticSnapshot(
         state=state,
@@ -98,9 +136,13 @@ def build_locomotion_diagnostic_snapshot(
         offsets=offsets,
         raw_targets=raw_targets,
         raw_measured=raw_measured,
+        delta_to_standing=delta_to_standing,
+        raw_delta_to_standing=raw_delta_to_standing,
         delta_to_initialization=delta_to_initialization,
         raw_delta_to_initialization=raw_delta_to_initialization,
         dry_run=dry_run,
         risk_joint_name=risk_joint_name,
         risk_raw_delta_to_initialization=risk_raw_delta,
+        standing_risk_joint_name=standing_risk_joint_name,
+        risk_raw_delta_to_standing=standing_risk_raw_delta,
     )

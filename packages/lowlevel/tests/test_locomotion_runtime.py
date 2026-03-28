@@ -209,6 +209,145 @@ class LocomotionRuntimeTests(unittest.TestCase):
             locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL,
         )
 
+    def test_reset_prints_calibration_audit(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+
+        with (
+            mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray),
+            mock.patch("builtins.print") as mock_print,
+        ):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+            )
+            robot.reset()
+            robot.shutdown()
+
+        printed_lines = " ".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        self.assertIn("Calibration audit:", printed_lines)
+        self.assertIn("standing pose:", printed_lines)
+        self.assertIn("initialization pose:", printed_lines)
+
+    def test_step_uses_standing_positions_for_initializing_request(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        captured: dict[str, object] = {}
+
+        def fake_advance(context):
+            captured["context"] = context
+            return SimpleNamespace(
+                state=locomotion_runtime_module.LocomotionControlState.INITIALIZING,
+                initialization_progress=0.0,
+                starting_positions=np.asarray(context.starting_positions, dtype=np.float32).copy(),
+                joint_position_target=np.asarray(context.measured_positions, dtype=np.float32).copy(),
+                enter_position_mode=False,
+                enter_damping_mode=False,
+                messages=(),
+            )
+
+        with (
+            mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray),
+            mock.patch.object(locomotion_runtime_module, "advance_locomotion_cycle", side_effect=fake_advance),
+        ):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+                dry_run=True,
+            )
+            robot.actuators.measurements_ready = True
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.INITIALIZING
+            robot.step(np.zeros((specification.joint_count,), dtype=np.float32))
+            robot.shutdown()
+
+        context = captured["context"]
+        np.testing.assert_allclose(context.initialization_positions, specification.standing_positions)
+        self.assertFalse(context.restart_initialization)
+
+    def test_step_restarts_initialization_when_switching_from_standing_hold_to_policy_control(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        captured: dict[str, object] = {}
+
+        def fake_advance(context):
+            captured["context"] = context
+            return SimpleNamespace(
+                state=locomotion_runtime_module.LocomotionControlState.INITIALIZING,
+                initialization_progress=0.0,
+                starting_positions=np.asarray(context.measured_positions, dtype=np.float32).copy(),
+                joint_position_target=np.asarray(context.measured_positions, dtype=np.float32).copy(),
+                enter_position_mode=False,
+                enter_damping_mode=False,
+                messages=(),
+            )
+
+        with (
+            mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray),
+            mock.patch.object(locomotion_runtime_module, "advance_locomotion_cycle", side_effect=fake_advance),
+        ):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+                dry_run=True,
+            )
+            robot.state = locomotion_runtime_module.LocomotionControlState.INITIALIZING
+            robot.initialization_progress = 1.0
+            robot.active_initialization_positions[:] = specification.standing_positions
+            robot.active_initialization_label = "standing"
+            robot.actuators.measurements_ready = True
+            robot.actuators.joint_position_measured[:] = specification.standing_positions
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+            robot.step(np.zeros((specification.joint_count,), dtype=np.float32))
+            robot.shutdown()
+
+        context = captured["context"]
+        self.assertTrue(context.restart_initialization)
+        np.testing.assert_allclose(context.initialization_positions, specification.initialization_positions)
+
+    def test_step_blocks_policy_request_when_too_far_from_standing(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        captured: dict[str, object] = {}
+
+        def fake_advance(context):
+            captured["context"] = context
+            return SimpleNamespace(
+                state=locomotion_runtime_module.LocomotionControlState.IDLE,
+                initialization_progress=0.0,
+                starting_positions=np.asarray(context.starting_positions, dtype=np.float32).copy(),
+                joint_position_target=np.asarray(context.measured_positions, dtype=np.float32).copy(),
+                enter_position_mode=False,
+                enter_damping_mode=False,
+                messages=(),
+            )
+
+        with (
+            mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray),
+            mock.patch.object(locomotion_runtime_module, "advance_locomotion_cycle", side_effect=fake_advance),
+            mock.patch("builtins.print") as mock_print,
+        ):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                enable_imu=False,
+                enable_command_source=False,
+                dry_run=True,
+            )
+            robot.actuators.measurements_ready = True
+            robot.actuators.joint_position_measured[:] = np.array([0.5] * specification.joint_count, dtype=np.float32)
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+            robot.step(np.zeros((specification.joint_count,), dtype=np.float32))
+            robot.shutdown()
+
+        self.assertEqual(
+            captured["context"].requested_state,
+            locomotion_runtime_module.LocomotionControlState.INVALID,
+        )
+        printed_lines = " ".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
+        self.assertIn("Policy gate blocked:", printed_lines)
+
 
 if __name__ == "__main__":
     unittest.main()

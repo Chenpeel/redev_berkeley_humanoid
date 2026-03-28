@@ -83,6 +83,7 @@ class JointTransportTestCase(unittest.TestCase):
             mirrored_joint_pairs=((0, 1),),
             joint_axis_directions=np.array([1.0, 1.0], dtype=np.float32),
             initialization_positions=np.zeros((2,), dtype=np.float32),
+            standing_positions=np.zeros((2,), dtype=np.float32),
             calibration_reference_positions=np.zeros((2,), dtype=np.float32),
             calibration_limit_selectors=("min", "min"),
         )

@@ -24,6 +24,7 @@ class LocomotionRobotSpecification:
     mirrored_joint_pairs: tuple[tuple[int, int], ...]
     joint_axis_directions: np.ndarray
     initialization_positions: np.ndarray
+    standing_positions: np.ndarray
     calibration_reference_positions: np.ndarray
     calibration_limit_selectors: tuple[CalibrationLimitSelector, ...]
     imu_baudrate: int = DEFAULT_IMU_BAUDRATE
@@ -34,6 +35,8 @@ class LocomotionRobotSpecification:
             raise ValueError("joint_axis_directions 的长度必须与关节数一致。")
         if self.initialization_positions.shape != (joint_count,):
             raise ValueError("initialization_positions 的长度必须与关节数一致。")
+        if self.standing_positions.shape != (joint_count,):
+            raise ValueError("standing_positions 的长度必须与关节数一致。")
         if self.calibration_reference_positions.shape != (joint_count,):
             raise ValueError("calibration_reference_positions 的长度必须与关节数一致。")
         if len(self.calibration_limit_selectors) != joint_count:
@@ -96,31 +99,48 @@ def build_leg_locomotion_robot_specification(
             ],
             dtype=np.float32,
         ),
+        standing_positions=np.array(
+            [
+                0.0,
+                0.0,
+                -0.1,
+                0.2,
+                -0.1,
+                0.0,
+                0.0,
+                0.0,
+                -0.1,
+                0.2,
+                -0.1,
+                0.0,
+            ],
+            dtype=np.float32,
+        ),
         calibration_reference_positions=np.array(
             [
-                np.deg2rad(-10.0),
-                np.deg2rad(33.75),
-                np.deg2rad(56.25),
-                np.deg2rad(0.0),
-                np.deg2rad(-45.0),
-                np.deg2rad(-15.0),
-                np.deg2rad(10.0),
-                np.deg2rad(-33.75),
-                np.deg2rad(56.25),
-                np.deg2rad(0.0),
-                np.deg2rad(-45.0),
-                np.deg2rad(15.0),
+                0.0,
+                0.0,
+                -0.1,
+                0.2,
+                -0.1,
+                0.0,
+                0.0,
+                0.0,
+                -0.1,
+                0.2,
+                -0.1,
+                0.0,
             ],
             dtype=np.float32,
         ),
         calibration_limit_selectors=(
             "min",
             "max",
+            "min",
+            "min",
             "max",
             "min",
             "min",
-            "min",
-            "max",
             "min",
             "max",
             "min",

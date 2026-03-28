@@ -22,6 +22,7 @@ class LocomotionCycleContext:
     measured_positions: np.ndarray
     policy_actions: np.ndarray
     initialization_positions: np.ndarray
+    restart_initialization: bool = False
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,17 @@ def advance_locomotion_cycle(context: LocomotionCycleContext) -> LocomotionCycle
     starting_positions = np.asarray(context.starting_positions, dtype=np.float32).copy()
     policy_actions = np.asarray(context.policy_actions, dtype=np.float32).copy()
     initialization_positions = np.asarray(context.initialization_positions, dtype=np.float32).copy()
+
+    if context.restart_initialization:
+        return LocomotionCycleResult(
+            state=LocomotionControlState.INITIALIZING,
+            initialization_progress=0.0,
+            starting_positions=measured_positions.copy(),
+            joint_position_target=measured_positions.copy(),
+            enter_position_mode=False,
+            enter_damping_mode=False,
+            messages=("Restarting initialization towards requested pose",),
+        )
 
     if context.state == LocomotionControlState.IDLE:
         if context.requested_state in (

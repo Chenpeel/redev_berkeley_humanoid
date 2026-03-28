@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -23,6 +24,8 @@ from .locomotion_specification import (
 
 class LocomotionRobot:
     """组合传感器、命令源和执行器通信的 locomotion 运行时。"""
+
+    _POLICY_ENTRY_GATE_MAX_ABS_DELTA_DEG = 10.0
 
     def __init__(
         self,
@@ -74,6 +77,10 @@ class LocomotionRobot:
         self.initialization_step = 0.01
         self.starting_positions = np.zeros(
             (self.specification.joint_count,), dtype=np.float32)
+        self.active_initialization_positions = self.specification.initialization_positions.copy()
+        self.active_initialization_label = "policy_entry"
+        self._policy_request_blocked = False
+        self._raw_requested_state = LocomotionControlState.INVALID
         self.lowlevel_states = np.zeros(
             (self.specification.observation_size,), dtype=np.float32)
 
@@ -138,6 +145,111 @@ class LocomotionRobot:
         if requested_state != LocomotionControlState.INVALID:
             self.requested_state = requested_state
 
+    def _raw_joint_positions_from(self, joint_positions: np.ndarray) -> np.ndarray:
+        positions = np.asarray(joint_positions, dtype=np.float32)
+        return (positions + self.position_offsets) * self.joint_axis_directions
+
+    def _compute_pose_delta(
+        self,
+        target_positions: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, str, float]:
+        target = np.asarray(target_positions, dtype=np.float32)
+        measured = self.actuators.joint_position_measured
+        delta = target - measured
+        raw_delta = self._raw_joint_positions_from(target) - self._raw_joint_positions_from(measured)
+        if self.specification.joint_count == 0:
+            return delta, raw_delta, "", 0.0
+
+        worst_index = int(np.argmax(np.abs(delta)))
+        worst_joint_name = self.specification.joint_names[worst_index]
+        max_abs_delta_deg = float(np.max(np.abs(np.rad2deg(delta))))
+        return delta, raw_delta, worst_joint_name, max_abs_delta_deg
+
+    def _calibration_file_state(self) -> str:
+        calibration_path = getattr(self.calibration_store, "calibration_path", None)
+        if calibration_path is None:
+            return "unknown"
+        return "found" if Path(calibration_path).exists() else "missing"
+
+    def _print_calibration_audit(self) -> None:
+        _, _, standing_joint_name, standing_max_abs_delta_deg = self._compute_pose_delta(
+            self.specification.standing_positions,
+        )
+        _, _, initialization_joint_name, initialization_max_abs_delta_deg = self._compute_pose_delta(
+            self.specification.initialization_positions,
+        )
+        print("Calibration audit:")
+        print(f"  file: {self._calibration_file_state()}")
+        print(
+            "  standing pose:",
+            f"max_abs_delta_deg={standing_max_abs_delta_deg:.2f}",
+            f"worst_joint={standing_joint_name}",
+        )
+        print(
+            "  initialization pose:",
+            f"max_abs_delta_deg={initialization_max_abs_delta_deg:.2f}",
+            f"worst_joint={initialization_joint_name}",
+        )
+
+    def _needs_policy_entry_gate(self) -> bool:
+        if self.requested_state != LocomotionControlState.POLICY_CONTROL:
+            return False
+        if self.state == LocomotionControlState.IDLE:
+            return True
+        return (
+            self.state == LocomotionControlState.INITIALIZING
+            and self.initialization_progress >= 1.0
+            and self.active_initialization_label == "standing"
+        )
+
+    def _policy_entry_gate_passes(self) -> bool:
+        _, _, standing_joint_name, standing_max_abs_delta_deg = self._compute_pose_delta(
+            self.specification.standing_positions,
+        )
+        if standing_max_abs_delta_deg <= self._POLICY_ENTRY_GATE_MAX_ABS_DELTA_DEG:
+            self._policy_request_blocked = False
+            return True
+
+        if not self._policy_request_blocked:
+            print(
+                "Policy gate blocked:",
+                f"standing pose max_abs_delta_deg={standing_max_abs_delta_deg:.2f}",
+                f"worst_joint={standing_joint_name}",
+                f"limit={self._POLICY_ENTRY_GATE_MAX_ABS_DELTA_DEG:.2f}",
+            )
+            print("Press A+LB to enter the ready/stand pose or recalibrate before requesting policy control.")
+        self._policy_request_blocked = True
+        self.requested_state = LocomotionControlState.INVALID
+        return False
+
+    def _resolve_initialization_cycle_inputs(
+        self,
+    ) -> tuple[LocomotionControlState, np.ndarray, bool]:
+        requested_state = self.requested_state
+        restart_initialization = False
+
+        if self._needs_policy_entry_gate() and not self._policy_entry_gate_passes():
+            requested_state = LocomotionControlState.INVALID
+
+        if requested_state == LocomotionControlState.INITIALIZING:
+            target_positions = np.asarray(self.specification.standing_positions, dtype=np.float32)
+            target_label = "standing"
+        elif requested_state == LocomotionControlState.POLICY_CONTROL:
+            target_positions = np.asarray(self.specification.initialization_positions, dtype=np.float32)
+            target_label = "policy_entry"
+            restart_initialization = (
+                self.state == LocomotionControlState.INITIALIZING
+                and self.initialization_progress >= 1.0
+                and self.active_initialization_label == "standing"
+            )
+        else:
+            target_positions = np.asarray(self.active_initialization_positions, dtype=np.float32)
+            target_label = self.active_initialization_label
+
+        self.active_initialization_positions[:] = target_positions
+        self.active_initialization_label = target_label
+        return requested_state, target_positions.copy(), restart_initialization
+
     def _wait_for_imu_ready(self) -> None:
         if self.imu is None or not self.require_imu_ready:
             return
@@ -180,6 +292,9 @@ class LocomotionRobot:
         joint_velocities[:] = self.actuators.joint_velocity_measured[:]
 
         command = self._get_command()
+        self._raw_requested_state = command.requested_state
+        if self._raw_requested_state != LocomotionControlState.POLICY_CONTROL:
+            self._policy_request_blocked = False
         self._update_requested_state(command.requested_state)
         mode[0] = int(self.requested_state)
         velocity_commands[0] = command.velocity_x
@@ -191,22 +306,28 @@ class LocomotionRobot:
     def reset(self) -> np.ndarray:
         self._wait_for_imu_ready()
         self.actuators.refresh_measurements()
+        self._print_calibration_audit()
         return self.get_observations()
 
     def step(self, actions: np.ndarray) -> np.ndarray:
         if self.dry_run or not self.actuators.measurements_ready:
             self.actuators.refresh_measurements()
 
+        requested_state, initialization_positions, restart_initialization = (
+            self._resolve_initialization_cycle_inputs()
+        )
+
         result = advance_locomotion_cycle(
             LocomotionCycleContext(
                 state=self.state,
-                requested_state=self.requested_state,
+                requested_state=requested_state,
                 initialization_progress=self.initialization_progress,
                 initialization_step=self.initialization_step,
                 starting_positions=self.starting_positions,
                 measured_positions=self.actuators.joint_position_measured,
                 policy_actions=actions,
-                initialization_positions=self.specification.initialization_positions,
+                initialization_positions=initialization_positions,
+                restart_initialization=restart_initialization,
             )
         )
 

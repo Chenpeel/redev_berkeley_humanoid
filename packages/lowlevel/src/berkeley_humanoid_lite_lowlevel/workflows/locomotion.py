@@ -68,11 +68,14 @@ def print_locomotion_debug_snapshot(
     print("[DEBUG] offsets  =", _format_array(snapshot.offsets))
     print("[DEBUG] raw_tgt  =", _format_array(snapshot.raw_targets))
     print("[DEBUG] raw_meas =", _format_array(snapshot.raw_measured))
+    print("[DEBUG] stand_err=", _format_array(snapshot.delta_to_standing))
+    print("[DEBUG] stand_raw=", _format_array(snapshot.raw_delta_to_standing))
     print("[DEBUG] init_err =", _format_array(snapshot.delta_to_initialization))
     print("[DEBUG] init_raw =", _format_array(snapshot.raw_delta_to_initialization))
     print(
         "[DEBUG] risk    =",
-        f"{snapshot.risk_joint_name} raw_init_delta={snapshot.risk_raw_delta_to_initialization:+.3f} "
+        f"init:{snapshot.risk_joint_name} raw_init_delta={snapshot.risk_raw_delta_to_initialization:+.3f} "
+        f"stand:{snapshot.standing_risk_joint_name} raw_stand_delta={snapshot.risk_raw_delta_to_standing:+.3f} "
         f"dry_run={snapshot.dry_run}",
     )
 
