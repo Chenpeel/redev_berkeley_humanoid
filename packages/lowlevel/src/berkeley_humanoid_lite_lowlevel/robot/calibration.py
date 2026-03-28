@@ -94,6 +94,29 @@ def compute_position_offsets(
     return (limit_readings - reference_positions).astype(np.float32, copy=False)
 
 
+def _ensure_initial_position_measurements(actuator_array: ActuatorArray) -> None:
+    position_measurements_complete = getattr(actuator_array, "position_measurements_complete", None)
+    if position_measurements_complete is None:
+        measurements_ready = getattr(actuator_array, "measurements_ready", None)
+        if measurements_ready is False:
+            raise RuntimeError("Failed to read any initial joint measurements before calibration capture.")
+        return
+
+    if bool(position_measurements_complete):
+        return
+
+    missing_names = getattr(actuator_array, "missing_position_measurement_names", ())
+    if callable(missing_names):
+        missing_names = missing_names()
+    if not missing_names:
+        missing_names = ("unknown joints",)
+    missing_text = ", ".join(str(name) for name in missing_names)
+    raise RuntimeError(
+        "Failed to read all initial joint measurements before calibration capture. "
+        f"Missing joints: {missing_text}."
+    )
+
+
 def capture_calibration_offsets(
     specification: LocomotionRobotSpecification,
     actuator_array: ActuatorArray,
@@ -104,6 +127,7 @@ def capture_calibration_offsets(
     # 操作者应该把机器人摆到期望的 calibration reference pose，
     # 而不是反复去找每个关节能到达的最大机械行程。
     limit_readings = actuator_array.read_positions()
+    _ensure_initial_position_measurements(actuator_array)
     print("Calibration reference pose guide:")
     for joint_name, reference_position, selector in zip(
         specification.joint_names,

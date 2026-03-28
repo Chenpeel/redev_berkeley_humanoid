@@ -22,6 +22,7 @@ class LocomotionActuatorArray:
 
     _ANGLE_PERIOD = float(2.0 * np.pi)
     _MEASUREMENT_READ_TIMEOUT_S = 0.001
+    _MEASUREMENT_WARNING_INTERVAL_S = 1.0
 
     def __init__(
         self,
@@ -54,11 +55,13 @@ class LocomotionActuatorArray:
         self.joint_position_measured = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_velocity_measured = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self._raw_position_measured = np.full((self.specification.joint_count,), np.nan, dtype=np.float32)
+        self._position_measurements_valid = np.zeros((self.specification.joint_count,), dtype=bool)
 
         self.joint_kp = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.joint_kd = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.torque_limit = np.zeros((self.specification.joint_count,), dtype=np.float32)
         self.measurements_ready = False
+        self._last_measurement_warning_time = float("-inf")
 
     def _unwrap_raw_position(self, index: int, position_measured: float) -> float:
         previous_position = float(self._raw_position_measured[index])
@@ -113,6 +116,63 @@ class LocomotionActuatorArray:
         except TypeError:
             return reader(device_id)
 
+    @property
+    def position_measurements_complete(self) -> bool:
+        return bool(np.all(self._position_measurements_valid))
+
+    @property
+    def missing_position_measurement_names(self) -> tuple[str, ...]:
+        return tuple(
+            joint.joint_name
+            for index, joint in enumerate(self.joint_interfaces)
+            if not self._position_measurements_valid[index]
+        )
+
+    def _read_position_measurement(self, joint: JointInterface) -> float | None:
+        return self._call_with_optional_timeout(
+            joint.bus.read_position_measured,
+            joint.device_id,
+            timeout=self._MEASUREMENT_READ_TIMEOUT_S,
+        )
+
+    def _store_position_measurement(
+        self,
+        index: int,
+        position_measured: float,
+        positions: np.ndarray,
+    ) -> None:
+        continuous_position = self._unwrap_raw_position(index, position_measured)
+        positions[index] = (
+            continuous_position * self.joint_axis_directions[index]
+        ) - self.position_offsets[index]
+        self._position_measurements_valid[index] = True
+
+    def _report_missing_position_measurements(self, missing_joints: list[JointInterface]) -> None:
+        if not missing_joints:
+            return
+
+        now = time.monotonic()
+        if now - self._last_measurement_warning_time < self._MEASUREMENT_WARNING_INTERVAL_S:
+            return
+
+        missing_descriptions = ", ".join(
+            f"{joint.joint_name}({self._describe_joint_bus(joint)}:{joint.device_id})"
+            for joint in missing_joints
+        )
+        message = (
+            "Warning: timed out reading joint positions for "
+            f"{missing_descriptions}; keeping last known values for missing joints."
+        )
+        if not self.position_measurements_complete:
+            unresolved = ", ".join(self.missing_position_measurement_names)
+            message += f" No valid measurement yet for: {unresolved}."
+        print(message)
+        self._last_measurement_warning_time = now
+
+    @staticmethod
+    def _describe_joint_bus(joint: JointInterface) -> str:
+        return getattr(joint.bus, "channel", getattr(joint.bus, "bus_name", "unknown"))
+
     def joint_to_raw_positions(self, joint_positions: np.ndarray) -> np.ndarray:
         joint_positions_array = np.asarray(joint_positions, dtype=np.float32)
         if joint_positions_array.shape != (self.specification.joint_count,):
@@ -141,16 +201,16 @@ class LocomotionActuatorArray:
     def read_positions(self) -> np.ndarray:
         positions = self.joint_position_measured.copy()
         updated = False
+        missing_joints: list[JointInterface] = []
         for index, joint in enumerate(self.joint_interfaces):
-            position_measured = joint.bus.read_position_measured(joint.device_id)
+            position_measured = self._read_position_measurement(joint)
             if position_measured is None:
+                missing_joints.append(joint)
                 continue
 
-            continuous_position = self._unwrap_raw_position(index, position_measured)
-            positions[index] = (
-                continuous_position * self.joint_axis_directions[index]
-            ) - self.position_offsets[index]
+            self._store_position_measurement(index, position_measured, positions)
             updated = True
+        self._report_missing_position_measurements(missing_joints)
         if updated:
             self.joint_position_measured[:] = positions
             self.measurements_ready = True
@@ -158,19 +218,14 @@ class LocomotionActuatorArray:
 
     def refresh_measurements(self) -> bool:
         updated = False
+        missing_joints: list[JointInterface] = []
         for index, joint in enumerate(self.joint_interfaces):
-            position_measured = self._call_with_optional_timeout(
-                joint.bus.read_position_measured,
-                joint.device_id,
-                timeout=self._MEASUREMENT_READ_TIMEOUT_S,
-            )
+            position_measured = self._read_position_measurement(joint)
             if position_measured is None:
+                missing_joints.append(joint)
                 continue
 
-            continuous_position = self._unwrap_raw_position(index, position_measured)
-            self.joint_position_measured[index] = (
-                continuous_position * self.joint_axis_directions[index]
-            ) - self.position_offsets[index]
+            self._store_position_measurement(index, position_measured, self.joint_position_measured)
             updated = True
 
             read_velocity_measured = getattr(joint.bus, "read_velocity_measured", None)
@@ -185,6 +240,7 @@ class LocomotionActuatorArray:
                         velocity_measured * self.joint_axis_directions[index]
                     )
 
+        self._report_missing_position_measurements(missing_joints)
         if updated:
             self.measurements_ready = True
         return updated
@@ -213,19 +269,13 @@ class LocomotionActuatorArray:
 
         # 执行器和策略坐标系不同，这里统一做方向与零位变换。
         if left_position_measured is not None:
-            left_position_measured = self._unwrap_raw_position(left_index, left_position_measured)
-            self.joint_position_measured[left_index] = (
-                left_position_measured * self.joint_axis_directions[left_index]
-            ) - self.position_offsets[left_index]
+            self._store_position_measurement(left_index, left_position_measured, self.joint_position_measured)
         if left_velocity_measured is not None:
             self.joint_velocity_measured[left_index] = (
                 left_velocity_measured * self.joint_axis_directions[left_index]
             )
         if right_position_measured is not None:
-            right_position_measured = self._unwrap_raw_position(right_index, right_position_measured)
-            self.joint_position_measured[right_index] = (
-                right_position_measured * self.joint_axis_directions[right_index]
-            ) - self.position_offsets[right_index]
+            self._store_position_measurement(right_index, right_position_measured, self.joint_position_measured)
         if right_velocity_measured is not None:
             self.joint_velocity_measured[right_index] = (
                 right_velocity_measured * self.joint_axis_directions[right_index]

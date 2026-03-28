@@ -5,15 +5,33 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-
 from berkeley_humanoid_lite_lowlevel.robot.calibration import (
     CalibrationStore,
+    capture_calibration_offsets,
     compute_position_offsets,
     update_limit_readings,
+)
+from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
+from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
+    JointTransportAddress,
+    LocomotionRobotSpecification,
 )
 
 
 class CalibrationTestCase(unittest.TestCase):
+    def _build_specification(self) -> LocomotionRobotSpecification:
+        return LocomotionRobotSpecification(
+            joint_addresses=(
+                JointTransportAddress("can0", 1, "joint_1"),
+                JointTransportAddress("can0", 2, "joint_2"),
+            ),
+            mirrored_joint_pairs=((0, 1),),
+            joint_axis_directions=np.array([1.0, 1.0], dtype=np.float32),
+            initialization_positions=np.zeros((2,), dtype=np.float32),
+            calibration_reference_positions=np.zeros((2,), dtype=np.float32),
+            calibration_limit_selectors=("min", "min"),
+        )
+
     def test_update_limit_readings_uses_selectors(self) -> None:
         limit_readings = np.array([1.0, 1.0, 1.0], dtype=np.float32)
         joint_readings = np.array([0.5, 2.0, 0.8], dtype=np.float32)
@@ -46,6 +64,28 @@ class CalibrationTestCase(unittest.TestCase):
 
         self.assertTrue(saved_path.name.endswith("calibration.yaml"))
         np.testing.assert_allclose(reloaded_offsets, offsets)
+
+    def test_capture_calibration_offsets_fails_when_initial_measurements_are_missing(self) -> None:
+        class FakeActuatorArray:
+            position_measurements_complete = False
+            missing_position_measurement_names = ("joint_1", "joint_2")
+
+            def read_positions(self) -> np.ndarray:
+                return np.zeros((2,), dtype=np.float32)
+
+        class FakeCommandSource:
+            def snapshot(self) -> object:
+                return type("Snapshot", (), {"requested_state": LocomotionControlState.IDLE})()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Missing joints: joint_1, joint_2",
+        ):
+            capture_calibration_offsets(
+                self._build_specification(),
+                FakeActuatorArray(),
+                FakeCommandSource(),
+            )
 
 
 if __name__ == "__main__":

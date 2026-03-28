@@ -13,7 +13,12 @@ from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
 
 
 class _FakeBus:
-    def __init__(self, bus_name: str, *, read_positions: dict[int, list[float]] | None = None) -> None:
+    def __init__(
+        self,
+        bus_name: str,
+        *,
+        read_positions: dict[int, list[float | None]] | None = None,
+    ) -> None:
         self.bus_name = bus_name
         self.read_position_timeouts: list[float | None] = []
         self.read_velocity_timeouts: list[float | None] = []
@@ -26,7 +31,7 @@ class _FakeBus:
             for device_id, values in (read_positions or {}).items()
         }
 
-    def read_position_measured(self, device_id: int, timeout: float | None = None) -> float:
+    def read_position_measured(self, device_id: int, timeout: float | None = None) -> float | None:
         self.read_position_timeouts.append(timeout)
         values = self._read_positions[device_id]
         if len(values) > 1:
@@ -173,6 +178,55 @@ class JointTransportTestCase(unittest.TestCase):
             fake_bus.read_velocity_timeouts,
             [actuators._MEASUREMENT_READ_TIMEOUT_S, actuators._MEASUREMENT_READ_TIMEOUT_S],
         )
+
+    def test_read_positions_uses_bounded_timeout_reads(self) -> None:
+        fake_bus = _FakeBus(
+            "can0",
+            read_positions={
+                1: [0.25],
+                2: [-0.5],
+            },
+        )
+
+        with mock.patch(
+            "berkeley_humanoid_lite_lowlevel.robot.joint_transport.recoil.Bus",
+            return_value=fake_bus,
+        ):
+            actuators = LocomotionActuatorArray(self._build_specification())
+
+        actuators.read_positions()
+
+        self.assertEqual(
+            fake_bus.read_position_timeouts,
+            [actuators._MEASUREMENT_READ_TIMEOUT_S, actuators._MEASUREMENT_READ_TIMEOUT_S],
+        )
+
+    def test_read_positions_reports_missing_measurements_without_marking_complete(self) -> None:
+        fake_bus = _FakeBus(
+            "can0",
+            read_positions={
+                1: [None],
+                2: [0.5],
+            },
+        )
+
+        with (
+            mock.patch(
+                "berkeley_humanoid_lite_lowlevel.robot.joint_transport.recoil.Bus",
+                return_value=fake_bus,
+            ),
+            mock.patch("builtins.print") as mock_print,
+        ):
+            actuators = LocomotionActuatorArray(self._build_specification())
+            positions = actuators.read_positions()
+
+        np.testing.assert_allclose(positions, np.array([0.0, 0.5], dtype=np.float32))
+        self.assertTrue(actuators.measurements_ready)
+        self.assertFalse(actuators.position_measurements_complete)
+        self.assertEqual(actuators.missing_position_measurement_names, ("joint_1",))
+        mock_print.assert_called_once()
+        self.assertIn("timed out reading joint positions", mock_print.call_args.args[0])
+        self.assertIn("joint_1", mock_print.call_args.args[0])
 
     def test_joint_and_raw_position_helpers_share_same_transform_formula(self) -> None:
         fake_bus = _FakeBus(
