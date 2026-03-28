@@ -21,7 +21,7 @@ joint_kp: 20
 joint_kd: 2
 effort_limits: 7.5
 default_base_position: [0.0, 0.0, 0.0]
-default_joint_positions: [0.0, 0.0, -0.2, 0.4, -0.3, 0.0, 0.0, 0.0, -0.2, 0.4, -0.3, 0.0]
+default_joint_positions: [-0.17453292, 0.58904862, 0.98174769, 0.0, -0.78539819, -0.2617994, 0.17453292, -0.58904862, 0.98174769, 0.0, -0.78539819, 0.2617994]
 
 # === Observation configurations ===
 num_observations: 45

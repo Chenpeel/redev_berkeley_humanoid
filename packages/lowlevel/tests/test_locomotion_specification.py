@@ -3,12 +3,14 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
+from berkeley_humanoid_lite_lowlevel.policy.configuration import load_policy_deployment_configuration
 from berkeley_humanoid_lite_lowlevel.robot.command_source import build_command_from_states
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import (
     build_default_locomotion_robot_specification,
     build_leg_locomotion_robot_specification,
 )
+from berkeley_humanoid_lite_lowlevel.runtime_paths import get_policy_config_path
 
 
 class LocomotionSpecificationTestCase(unittest.TestCase):
@@ -43,6 +45,27 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
             specification.initialization_positions,
             specification.calibration_reference_positions,
         )
+
+    def test_policy_default_joint_positions_match_calibration_reference_pose(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        expected_leg_positions = specification.calibration_reference_positions
+
+        for file_name in (
+            "policy_biped_50hz.yaml",
+            "policy_biped_25hz_a.yaml",
+            "policy_biped_25hz_b.yaml",
+            "policy_humanoid.yaml",
+            "policy_humanoid_legs.yaml",
+            "policy_video.yaml",
+        ):
+            configuration = load_policy_deployment_configuration(get_policy_config_path(file_name))
+            default_joint_positions = np.asarray(configuration.default_joint_positions, dtype=np.float32)
+            leg_positions = (
+                default_joint_positions
+                if default_joint_positions.shape == expected_leg_positions.shape
+                else default_joint_positions[-expected_leg_positions.shape[0]:]
+            )
+            np.testing.assert_allclose(leg_positions, expected_leg_positions)
 
     def test_build_command_from_states_maps_mode_and_axes(self) -> None:
         states = {
