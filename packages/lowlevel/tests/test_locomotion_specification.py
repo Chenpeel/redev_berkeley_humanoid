@@ -38,17 +38,27 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
         self.assertEqual(specification.joint_addresses[6].device_id, 2)
         self.assertEqual(specification.joint_addresses[8].device_id, 6)
 
-    def test_leg_specification_initialization_pose_matches_calibration_reference_pose(self) -> None:
+    def test_leg_specification_initialization_pose_matches_source_rl_init_pose(self) -> None:
         specification = build_leg_locomotion_robot_specification()
+        expected_initialization_positions = np.array(
+            [0.0, 0.0, -0.2, 0.4, -0.3, 0.0, 0.0, 0.0, -0.2, 0.4, -0.3, 0.0],
+            dtype=np.float32,
+        )
 
         np.testing.assert_allclose(
             specification.initialization_positions,
-            specification.calibration_reference_positions,
+            expected_initialization_positions,
+        )
+        self.assertFalse(
+            np.allclose(
+                specification.initialization_positions,
+                specification.calibration_reference_positions,
+            )
         )
 
-    def test_policy_default_joint_positions_match_calibration_reference_pose(self) -> None:
+    def test_policy_default_joint_positions_match_source_rl_init_pose(self) -> None:
         specification = build_leg_locomotion_robot_specification()
-        expected_leg_positions = specification.calibration_reference_positions
+        expected_leg_positions = specification.initialization_positions
 
         for file_name in (
             "policy_biped_50hz.yaml",
@@ -66,6 +76,12 @@ class LocomotionSpecificationTestCase(unittest.TestCase):
                 else default_joint_positions[-expected_leg_positions.shape[0]:]
             )
             np.testing.assert_allclose(leg_positions, expected_leg_positions)
+            self.assertFalse(
+                np.allclose(
+                    leg_positions,
+                    specification.calibration_reference_positions,
+                )
+            )
 
     def test_build_command_from_states_maps_mode_and_axes(self) -> None:
         states = {
