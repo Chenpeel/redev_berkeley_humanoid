@@ -9,6 +9,7 @@ from berkeley_humanoid_lite.environments.session import (
     MujocoSession,
     close_mujoco_session,
     create_mujoco_session,
+    forward_mujoco_session,
     resolve_mjcf_scene_path,
     step_mujoco_session,
     sync_mujoco_viewer,
@@ -79,6 +80,17 @@ class MujocoSessionTestCase(unittest.TestCase):
         )
 
         self.assertEqual(step_calls, [("model", "data")])
+
+    def test_forward_mujoco_session_delegates_to_forward_function(self) -> None:
+        session = MujocoSession(model="model", data="data", viewer=FakeViewer())
+        forward_calls: list[tuple[object, object]] = []
+
+        forward_mujoco_session(
+            session,
+            forward_fn=lambda model, data: forward_calls.append((model, data)),
+        )
+
+        self.assertEqual(forward_calls, [("model", "data")])
 
     def test_sync_mujoco_viewer_calls_viewer_sync(self) -> None:
         viewer = FakeViewer()

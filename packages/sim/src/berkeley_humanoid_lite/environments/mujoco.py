@@ -18,7 +18,13 @@ from .runtime import (
     reset_simulator_state,
     reset_visualizer_state,
 )
-from .session import close_mujoco_session, create_mujoco_session, step_mujoco_session, sync_mujoco_viewer
+from .session import (
+    close_mujoco_session,
+    create_mujoco_session,
+    forward_mujoco_session,
+    step_mujoco_session,
+    sync_mujoco_viewer,
+)
 
 
 class MujocoEnv:
@@ -68,6 +74,7 @@ class MujocoVisualizer(MujocoEnv):
             torch.Tensor: Initial observations after reset
         """
         reset_visualizer_state(self.mj_data, num_dofs=self.num_dofs)
+        forward_mujoco_session(self.session)
 
     def step(self, robot_observations: np.array) -> None:
         """Execute one simulation step with the given actions.
@@ -140,6 +147,7 @@ class MujocoSimulator(MujocoEnv):
             default_base_position=self.cfg.default_base_position,
             default_joint_positions=self.cfg.default_joint_positions,
         )
+        forward_mujoco_session(self.session)
 
         observations = self._get_observations()
         return observations

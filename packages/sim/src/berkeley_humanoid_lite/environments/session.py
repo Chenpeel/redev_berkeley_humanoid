@@ -49,6 +49,15 @@ def step_mujoco_session(
     step_fn(session.model, session.data)
 
 
+def forward_mujoco_session(
+    session: MujocoSession,
+    *,
+    forward_fn: Callable[[Any, Any], None] = mujoco.mj_forward,
+) -> None:
+    """在不推进时间的情况下刷新 MuJoCo 派生状态和传感器缓存。"""
+    forward_fn(session.model, session.data)
+
+
 def sync_mujoco_viewer(session: MujocoSession) -> None:
     """刷新 MuJoCo passive viewer。"""
     session.viewer.sync()
