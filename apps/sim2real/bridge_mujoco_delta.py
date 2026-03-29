@@ -37,7 +37,9 @@ def main() -> None:
         help="Print a bridge debug snapshot every N policy steps when --debug is enabled",
     )
     parser.add_argument(
+        "--scale",
         "--bridge-scale",
+        dest="bridge_scale",
         type=float,
         default=1.0,
         help="Uniform scaling factor applied to MuJoCo joint deltas before sending to the robot",
@@ -53,6 +55,30 @@ def main() -> None:
         type=float,
         default=3.0,
         help="Clamp each control-step target update to +/- this many degrees",
+    )
+    parser.add_argument(
+        "--position-kp",
+        type=float,
+        default=20.0,
+        help="Position proportional gain written to the robot before bridge startup",
+    )
+    parser.add_argument(
+        "--position-kd",
+        type=float,
+        default=2.0,
+        help="Position derivative gain written to the robot before bridge startup",
+    )
+    parser.add_argument(
+        "--torque-limit",
+        type=float,
+        default=4.0,
+        help="Torque limit written to the robot before bridge startup",
+    )
+    parser.add_argument(
+        "--policy-gate-deg",
+        type=float,
+        default=None,
+        help="Override the lowlevel policy-entry standing-pose gate threshold in degrees",
     )
     parser.add_argument(
         "--enable-imu",
@@ -72,6 +98,10 @@ def main() -> None:
         bridge_scale=arguments.bridge_scale,
         max_delta_radians=math.radians(arguments.max_delta_deg),
         max_step_radians=math.radians(arguments.max_step_deg),
+        position_kp=arguments.position_kp,
+        position_kd=arguments.position_kd,
+        torque_limit=arguments.torque_limit,
+        policy_gate_degrees=arguments.policy_gate_deg,
         enable_imu=arguments.enable_imu,
     )
 

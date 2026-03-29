@@ -20,6 +20,13 @@ def _format_array(values: Sequence[float] | np.ndarray) -> str:
     )
 
 
+def _format_bridge_scale(value: float | Sequence[float]) -> str:
+    scale_array = np.asarray(value, dtype=np.float32)
+    if scale_array.ndim == 0:
+        return f"{float(scale_array.item()):.3f}"
+    return _format_array(scale_array)
+
+
 def _canonicalize_joint_name(name: str) -> str:
     canonical_name = str(name).strip()
     if canonical_name.startswith("leg_"):
@@ -217,9 +224,13 @@ def run_mujoco_joint_position_bridge(
     dry_run: bool = False,
     debug: bool = False,
     debug_every: int = 25,
-    bridge_scale: float = 1.0,
+    bridge_scale: float | Sequence[float] = 1.0,
     max_delta_radians: float | None = np.deg2rad(30.0),
     max_step_radians: float | None = np.deg2rad(3.0),
+    position_kp: float = 20.0,
+    position_kd: float = 2.0,
+    torque_limit: float = 4.0,
+    policy_gate_degrees: float | None = None,
     enable_imu: bool = False,
 ) -> None:
     from berkeley_humanoid_lite.environments import MujocoSimulator
@@ -235,10 +246,20 @@ def run_mujoco_joint_position_bridge(
         print("Dry-run enabled: bridge targets will be computed without sending motor position commands")
     if debug:
         print(f"Bridge debug snapshots enabled every {debug_every} policy steps")
+    print(f"Bridge scale: {_format_bridge_scale(bridge_scale)}")
     if max_delta_radians is not None:
         print(f"Max bridge delta: {np.rad2deg(max_delta_radians):.2f} deg")
     if max_step_radians is not None:
         print(f"Max bridge step: {np.rad2deg(max_step_radians):.2f} deg")
+    if not dry_run:
+        print(
+            "Bridge position gains:",
+            f"kp={position_kp:.2f}",
+            f"kd={position_kd:.2f}",
+            f"torque_limit={torque_limit:.2f}",
+        )
+    if policy_gate_degrees is not None:
+        print(f"Bridge policy gate limit: {policy_gate_degrees:.2f} deg")
 
     simulator = None
     robot = None
@@ -264,8 +285,14 @@ def run_mujoco_joint_position_bridge(
             dry_run=dry_run,
             require_imu_ready=enable_imu,
         )
+        if policy_gate_degrees is not None:
+            robot._POLICY_ENTRY_GATE_MAX_ABS_DELTA_DEG = float(policy_gate_degrees)
         if not dry_run:
-            robot.enter_damping_mode()
+            robot.actuators.configure_damping_mode(
+                position_kp=position_kp,
+                position_kd=position_kd,
+                torque_limit=torque_limit,
+            )
         robot.reset()
         startup_completed = True
 
