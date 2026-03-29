@@ -3,7 +3,7 @@
 import argparse
 
 from berkeley_humanoid_lite_lowlevel.cli import add_leg_bus_arguments, run_with_friendly_gamepad_errors
-from berkeley_humanoid_lite_lowlevel.runtime_paths import get_policy_config_path
+from berkeley_humanoid_lite_lowlevel.runtime_paths import get_policy_config_path, get_pose_alignment_path
 from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     DEFAULT_IMU_BAUDRATE,
     DEFAULT_IMU_PROBE_DURATION,
@@ -101,6 +101,12 @@ def main() -> None:
         action="store_true",
         help="Start locomotion without waiting for the IMU quaternion/gyro stream to become ready",
     )
+    parser.add_argument(
+        "--pose-alignment-path",
+        type=str,
+        default=str(get_pose_alignment_path()),
+        help="Path to the locomotion pose-alignment file",
+    )
     arguments = parser.parse_args()
 
     configuration = load_policy_deployment_configuration(arguments.config)
@@ -131,6 +137,7 @@ def main() -> None:
         imu_timeout=arguments.imu_timeout,
         imu_wait_timeout=arguments.imu_wait_timeout,
         require_imu_ready=not arguments.skip_imu_ready_check,
+        pose_alignment_path=arguments.pose_alignment_path,
     )
 
 

@@ -14,6 +14,7 @@ from berkeley_humanoid_lite_lowlevel.robot.command_source import GamepadCommandS
 from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_diagnostics import LocomotionDiagnosticSnapshot
 from berkeley_humanoid_lite_lowlevel.robot.locomotion_specification import build_leg_locomotion_robot_specification
+from berkeley_humanoid_lite_lowlevel.runtime_paths import get_pose_alignment_path
 from berkeley_humanoid_lite_lowlevel.workflows.imu import (
     DEFAULT_IMU_BAUDRATE,
     DEFAULT_IMU_PROBE_DURATION,
@@ -31,6 +32,7 @@ DEFAULT_GAMEPAD_UDP_HOST = "127.0.0.1"
 DEFAULT_GAMEPAD_UDP_PORT = 10011
 DEFAULT_GAMEPAD_UDP_RATE_HZ = 20.0
 DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT = 2.0
+DEFAULT_LOCOMOTION_POSE_ALIGNMENT_PATH = str(get_pose_alignment_path())
 
 
 def _format_array(values: np.ndarray) -> str:
@@ -138,6 +140,12 @@ def resolve_locomotion_imu_configuration(
     return configuration
 
 
+def resolve_policy_reference_joint_positions(configuration: PolicyDeploymentConfiguration) -> np.ndarray:
+    if configuration.num_actions == configuration.num_joints:
+        return np.array(configuration.default_joint_positions, dtype=np.float32)
+    return np.array(configuration.default_joint_positions[10:], dtype=np.float32)
+
+
 def create_locomotion_robot(
     *,
     left_leg_bus: str = "can0",
@@ -150,8 +158,10 @@ def create_locomotion_robot(
     imu_timeout: float = DEFAULT_IMU_TIMEOUT,
     imu_wait_timeout: float = DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT,
     require_imu_ready: bool = True,
+    pose_alignment_path: str | None = None,
 ):
     from berkeley_humanoid_lite_lowlevel.robot import LocomotionRobot
+    from berkeley_humanoid_lite_lowlevel.robot.pose_alignment import PoseAlignmentStore
 
     specification = build_leg_locomotion_robot_specification(
         left_leg_bus=left_leg_bus,
@@ -167,6 +177,7 @@ def create_locomotion_robot(
         imu_read_timeout=imu_timeout,
         imu_wait_timeout=imu_wait_timeout,
         require_imu_ready=require_imu_ready,
+        pose_alignment_store=PoseAlignmentStore(pose_alignment_path),
     )
 
 
@@ -185,6 +196,7 @@ def run_locomotion_loop(
     imu_timeout: float = DEFAULT_IMU_TIMEOUT,
     imu_wait_timeout: float = DEFAULT_LOCOMOTION_IMU_WAIT_TIMEOUT,
     require_imu_ready: bool = True,
+    pose_alignment_path: str | None = None,
 ) -> None:
     from berkeley_humanoid_lite_lowlevel.policy.controller import PolicyController
 
@@ -215,7 +227,7 @@ def run_locomotion_loop(
     observation_stream = None
     startup_completed = False
     try:
-        robot = create_locomotion_robot(
+        robot_kwargs: dict[str, object] = dict(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
             dry_run=dry_run,
@@ -225,6 +237,9 @@ def run_locomotion_loop(
             imu_wait_timeout=imu_wait_timeout,
             require_imu_ready=require_imu_ready,
         )
+        if pose_alignment_path is not None:
+            robot_kwargs["pose_alignment_path"] = pose_alignment_path
+        robot = create_locomotion_robot(**robot_kwargs)
         observation_stream = create_observation_stream(configuration)
         if not dry_run:
             robot.enter_damping_mode()
@@ -281,14 +296,18 @@ def run_idle_stream(
     *,
     left_leg_bus: str = "can0",
     right_leg_bus: str = "can1",
+    pose_alignment_path: str | None = None,
 ) -> None:
     robot = None
     observation_stream = None
     try:
-        robot = create_locomotion_robot(
+        robot_kwargs: dict[str, object] = dict(
             left_leg_bus=left_leg_bus,
             right_leg_bus=right_leg_bus,
         )
+        if pose_alignment_path is not None:
+            robot_kwargs["pose_alignment_path"] = pose_alignment_path
+        robot = create_locomotion_robot(**robot_kwargs)
         observation_stream = create_observation_stream(configuration)
         robot.enter_damping_mode()
         robot.reset()
@@ -311,13 +330,17 @@ def check_locomotion_connection(
     *,
     left_leg_bus: str = "can0",
     right_leg_bus: str = "can1",
+    pose_alignment_path: str | None = None,
 ) -> None:
-    robot = create_locomotion_robot(
+    robot_kwargs: dict[str, object] = dict(
         left_leg_bus=left_leg_bus,
         right_leg_bus=right_leg_bus,
         enable_imu=False,
         enable_command_source=False,
     )
+    if pose_alignment_path is not None:
+        robot_kwargs["pose_alignment_path"] = pose_alignment_path
+    robot = create_locomotion_robot(**robot_kwargs)
     try:
         robot.check_connection()
     finally:
@@ -332,12 +355,7 @@ def create_policy_inference_smoke_test_observations(
     observations = np.zeros((7 + configuration.num_actions * 2 + 1 + 3,), dtype=np.float32)
     observations[0] = 1.0
 
-    if configuration.num_actions == configuration.num_joints:
-        default_joint_positions = np.array(configuration.default_joint_positions, dtype=np.float32)
-    else:
-        default_joint_positions = np.array(configuration.default_joint_positions[10:], dtype=np.float32)
-
-    observations[7 : 7 + configuration.num_actions] = default_joint_positions
+    observations[7 : 7 + configuration.num_actions] = resolve_policy_reference_joint_positions(configuration)
     observations[7 + configuration.num_actions * 2 + 1 : 7 + configuration.num_actions * 2 + 4] = np.asarray(
         command_velocity,
         dtype=np.float32,
@@ -434,3 +452,59 @@ def broadcast_gamepad_commands(
         command_source.stop()
         if command_stream is not None:
             command_stream.stop()
+
+
+def run_locomotion_pose_alignment_capture(
+    configuration: PolicyDeploymentConfiguration,
+    *,
+    left_leg_bus: str = "can0",
+    right_leg_bus: str = "can1",
+    pose_alignment_path: str | None = None,
+    polling_interval_seconds: float = 0.05,
+    capture_window_size: int = 20,
+    max_stddev_deg: float = 1.0,
+    write: bool = False,
+) -> None:
+    from berkeley_humanoid_lite_lowlevel.robot import capture_pose_alignment_result
+
+    reference_positions = resolve_policy_reference_joint_positions(configuration)
+    robot_kwargs: dict[str, object] = dict(
+        left_leg_bus=left_leg_bus,
+        right_leg_bus=right_leg_bus,
+        enable_imu=False,
+        enable_command_source=True,
+        require_imu_ready=False,
+    )
+    if pose_alignment_path is not None:
+        robot_kwargs["pose_alignment_path"] = pose_alignment_path
+    robot = create_locomotion_robot(**robot_kwargs)
+
+    try:
+        robot.enter_damping_mode()
+        robot.actuators.refresh_measurements()
+        if robot.command_source is None:
+            raise RuntimeError("Gamepad command source is not available for locomotion pose capture.")
+
+        capture_result = capture_pose_alignment_result(
+            robot.specification,
+            robot.actuators,
+            robot.command_source,
+            reference_positions=reference_positions,
+            polling_interval_seconds=polling_interval_seconds,
+            capture_window_size=capture_window_size,
+            max_stddev_deg=max_stddev_deg,
+        )
+        if not write:
+            print("Re-run with --write to persist the captured bias to the locomotion pose-alignment config.")
+            return
+
+        output_path = robot.pose_alignment_store.save_pose_alignment_bias(
+            capture_result.pose_alignment_bias,
+            metadata=capture_result.build_metadata(
+                robot.specification,
+                reference_positions=reference_positions,
+            ),
+        )
+        print(f"saved locomotion pose alignment to {output_path}")
+    finally:
+        robot.shutdown()

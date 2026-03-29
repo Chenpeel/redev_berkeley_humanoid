@@ -131,6 +131,76 @@ class LocomotionWorkflowTests(unittest.TestCase):
         self.assertEqual(captured["imu_wait_timeout"], 1.5)
         self.assertFalse(captured["require_imu_ready"])
 
+    def test_resolve_policy_reference_joint_positions_matches_default_joint_positions(self) -> None:
+        configuration = SimpleNamespace(
+            num_actions=12,
+            num_joints=12,
+            default_joint_positions=[0.0, 0.0, -0.2, 0.4, -0.3, 0.0, 0.0, 0.0, -0.2, 0.4, -0.3, 0.0],
+        )
+
+        reference_positions = locomotion_workflow.resolve_policy_reference_joint_positions(configuration)
+
+        np.testing.assert_allclose(
+            reference_positions,
+            np.array([0.0, 0.0, -0.2, 0.4, -0.3, 0.0, 0.0, 0.0, -0.2, 0.4, -0.3, 0.0], dtype=np.float32),
+        )
+
+    def test_run_locomotion_pose_alignment_capture_saves_bias_when_write_enabled(self) -> None:
+        saved: dict[str, object] = {}
+
+        class FakePoseAlignmentStore:
+            def save_pose_alignment_bias(self, pose_alignment_bias: np.ndarray, *, metadata: dict[str, object] | None):
+                saved["bias"] = pose_alignment_bias.copy()
+                saved["metadata"] = metadata
+                return "/tmp/locomotion_pose_alignment.yaml"
+
+        class FakeRobot:
+            def __init__(self) -> None:
+                self.specification = SimpleNamespace(
+                    joint_count=2,
+                    joint_names=("joint_0", "joint_1"),
+                )
+                self.actuators = SimpleNamespace(refresh_measurements=lambda: True)
+                self.command_source = object()
+                self.pose_alignment_store = FakePoseAlignmentStore()
+
+            def enter_damping_mode(self) -> None:
+                return None
+
+            def shutdown(self) -> None:
+                saved["shutdown"] = True
+
+        capture_result = SimpleNamespace(
+            pose_alignment_bias=np.array([0.1, -0.2], dtype=np.float32),
+            build_metadata=lambda specification, reference_positions: {
+                "joint_names": list(specification.joint_names),
+                "reference_positions": list(reference_positions),
+            },
+        )
+        configuration = SimpleNamespace(
+            num_actions=2,
+            num_joints=2,
+            default_joint_positions=[0.0, -0.2],
+        )
+
+        with mock.patch.object(
+            locomotion_workflow,
+            "create_locomotion_robot",
+            return_value=FakeRobot(),
+        ):
+            with mock.patch(
+                "berkeley_humanoid_lite_lowlevel.robot.capture_pose_alignment_result",
+                return_value=capture_result,
+            ):
+                locomotion_workflow.run_locomotion_pose_alignment_capture(
+                    configuration,
+                    write=True,
+                )
+
+        np.testing.assert_allclose(saved["bias"], np.array([0.1, -0.2], dtype=np.float32))
+        self.assertEqual(saved["metadata"]["joint_names"], ["joint_0", "joint_1"])
+        self.assertTrue(saved["shutdown"])
+
     def test_resolve_locomotion_imu_configuration_accepts_hiwonder_stream(self) -> None:
         with mock.patch.object(
             locomotion_workflow,

@@ -36,9 +36,10 @@ def _build_raw_pose_delta(
     measured: np.ndarray,
     offsets: np.ndarray,
     directions: np.ndarray,
+    pose_alignment_bias: np.ndarray,
 ) -> np.ndarray:
-    raw_targets = (target_positions + offsets) * directions
-    raw_measured = (measured + offsets) * directions
+    raw_targets = (target_positions - pose_alignment_bias + offsets) * directions
+    raw_measured = (measured - pose_alignment_bias + offsets) * directions
     return raw_targets - raw_measured
 
 
@@ -91,24 +92,27 @@ def build_locomotion_diagnostic_snapshot(
     position_offsets: np.ndarray,
     joint_axis_directions: np.ndarray,
     dry_run: bool,
+    pose_alignment_bias: np.ndarray | None = None,
 ) -> LocomotionDiagnosticSnapshot:
     actions_array = np.asarray(actions, dtype=np.float32)
     targets = np.asarray(joint_position_target, dtype=np.float32)
     measured = np.asarray(joint_position_measured, dtype=np.float32)
     offsets = np.asarray(position_offsets, dtype=np.float32)
     directions = np.asarray(joint_axis_directions, dtype=np.float32)
+    bias = np.zeros_like(measured) if pose_alignment_bias is None else np.asarray(pose_alignment_bias, dtype=np.float32)
     standing_positions = np.asarray(specification.standing_positions, dtype=np.float32)
     initialization_positions = np.asarray(specification.initialization_positions, dtype=np.float32)
     velocity_command = np.asarray(command_velocity, dtype=np.float32)
 
-    raw_targets = (targets + offsets) * directions
-    raw_measured = (measured + offsets) * directions
+    raw_targets = (targets - bias + offsets) * directions
+    raw_measured = (measured - bias + offsets) * directions
     delta_to_standing = standing_positions - measured
     raw_delta_to_standing = _build_raw_pose_delta(
         standing_positions,
         measured,
         offsets,
         directions,
+        bias,
     )
     delta_to_initialization = initialization_positions - measured
     raw_delta_to_initialization = _build_raw_pose_delta(
@@ -116,6 +120,7 @@ def build_locomotion_diagnostic_snapshot(
         measured,
         offsets,
         directions,
+        bias,
     )
     risk_joint_name, risk_raw_delta = _find_risk_joint_name(
         specification,

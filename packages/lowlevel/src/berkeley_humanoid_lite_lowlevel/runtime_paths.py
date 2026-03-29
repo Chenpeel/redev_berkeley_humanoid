@@ -45,6 +45,10 @@ def get_calibration_path(file_name: str = "calibration.yaml") -> Path:
     return get_artifacts_dir() / "calibration" / file_name
 
 
+def get_pose_alignment_path(file_name: str = "locomotion_pose_alignment.yaml") -> Path:
+    return get_artifacts_dir() / "calibration" / file_name
+
+
 def get_hardware_config_path(file_name: str) -> Path:
     return get_hardware_configs_dir() / file_name
 

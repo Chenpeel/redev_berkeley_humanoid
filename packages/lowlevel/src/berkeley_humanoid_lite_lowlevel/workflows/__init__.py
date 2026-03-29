@@ -19,6 +19,7 @@ __all__ = [
     "check_locomotion_connection",
     "run_idle_stream",
     "run_locomotion_loop",
+    "run_locomotion_pose_alignment_capture",
     "run_policy_inference_smoke_test",
     "stream_gamepad_commands",
     "broadcast_gamepad_commands",
@@ -90,6 +91,10 @@ _MODULE_EXPORTS = {
     "run_locomotion_loop": (
         "berkeley_humanoid_lite_lowlevel.workflows.locomotion",
         "run_locomotion_loop",
+    ),
+    "run_locomotion_pose_alignment_capture": (
+        "berkeley_humanoid_lite_lowlevel.workflows.locomotion",
+        "run_locomotion_pose_alignment_capture",
     ),
     "run_policy_inference_smoke_test": (
         "berkeley_humanoid_lite_lowlevel.workflows.locomotion",

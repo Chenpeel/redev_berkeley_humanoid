@@ -14,6 +14,16 @@ class FakeCalibrationStore:
         return np.zeros((joint_count,), dtype=np.float32)
 
 
+class FakePoseAlignmentStore:
+    def __init__(self, bias: np.ndarray | None = None) -> None:
+        self.bias = np.zeros((0,), dtype=np.float32) if bias is None else np.asarray(bias, dtype=np.float32)
+
+    def load_pose_alignment_bias(self, joint_count: int) -> np.ndarray:
+        if self.bias.shape == (0,):
+            return np.zeros((joint_count,), dtype=np.float32)
+        return self.bias.copy()
+
+
 class FakeActuatorArray:
     def __init__(self, specification, position_offsets=None) -> None:
         self.specification = specification
@@ -230,6 +240,28 @@ class LocomotionRuntimeTests(unittest.TestCase):
         self.assertIn("standing pose:", printed_lines)
         self.assertIn("initialization pose:", printed_lines)
 
+    def test_get_observations_applies_pose_alignment_bias(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        pose_alignment_bias = np.array([0.05] * specification.joint_count, dtype=np.float32)
+
+        with mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                pose_alignment_store=FakePoseAlignmentStore(pose_alignment_bias),
+                enable_imu=False,
+                enable_command_source=False,
+            )
+            robot.actuators.joint_position_measured[:] = np.array([0.1] * specification.joint_count, dtype=np.float32)
+
+            observations = robot.get_observations()
+            robot.shutdown()
+
+        np.testing.assert_allclose(
+            observations[7 : 7 + specification.joint_count],
+            np.array([0.15] * specification.joint_count, dtype=np.float32),
+        )
+
     def test_step_uses_standing_positions_for_initializing_request(self) -> None:
         specification = build_leg_locomotion_robot_specification()
         captured: dict[str, object] = {}
@@ -347,6 +379,31 @@ class LocomotionRuntimeTests(unittest.TestCase):
         )
         printed_lines = " ".join(str(call.args[0]) for call in mock_print.call_args_list if call.args)
         self.assertIn("Policy gate blocked:", printed_lines)
+
+    def test_step_writes_hardware_targets_after_removing_pose_alignment_bias(self) -> None:
+        specification = build_leg_locomotion_robot_specification()
+        pose_alignment_bias = np.array([0.05] * specification.joint_count, dtype=np.float32)
+        policy_actions = np.array([0.2] * specification.joint_count, dtype=np.float32)
+
+        with mock.patch.object(locomotion_runtime_module, "LocomotionActuatorArray", FakeActuatorArray):
+            robot = locomotion_runtime_module.LocomotionRobot(
+                specification=specification,
+                calibration_store=FakeCalibrationStore(),
+                pose_alignment_store=FakePoseAlignmentStore(pose_alignment_bias),
+                enable_imu=False,
+                enable_command_source=False,
+                dry_run=True,
+            )
+            robot.state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+            robot.requested_state = locomotion_runtime_module.LocomotionControlState.POLICY_CONTROL
+            robot.actuators.measurements_ready = True
+            robot.step(policy_actions)
+            robot.shutdown()
+
+        np.testing.assert_allclose(
+            robot.actuators.joint_position_target,
+            np.array([0.15] * specification.joint_count, dtype=np.float32),
+        )
 
     def test_get_observations_zeroes_command_during_policy_entry_window(self) -> None:
         specification = build_leg_locomotion_robot_specification()

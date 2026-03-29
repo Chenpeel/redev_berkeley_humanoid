@@ -12,15 +12,20 @@ __all__ = [
     "LocomotionControlState",
     "LocomotionRobot",
     "LocomotionRobotSpecification",
+    "PoseAlignmentStore",
     "SerialGripper",
     "XInputCode",
+    "apply_pose_alignment_bias",
     "build_command_from_states",
     "build_default_locomotion_robot_specification",
     "build_leg_locomotion_robot_specification",
     "capture_calibration_offsets",
+    "capture_pose_alignment_result",
+    "compute_pose_alignment_bias",
     "compute_position_offsets",
     "normalized_gripper_target_to_raw_value",
     "read_robot_configuration",
+    "remove_pose_alignment_bias",
     "update_limit_readings",
     "write_robot_configuration",
 ]
@@ -36,6 +41,26 @@ _MODULE_EXPORTS = {
     "compute_position_offsets": (
         "berkeley_humanoid_lite_lowlevel.robot.calibration",
         "compute_position_offsets",
+    ),
+    "PoseAlignmentStore": (
+        "berkeley_humanoid_lite_lowlevel.robot.pose_alignment",
+        "PoseAlignmentStore",
+    ),
+    "capture_pose_alignment_result": (
+        "berkeley_humanoid_lite_lowlevel.robot.pose_alignment",
+        "capture_pose_alignment_result",
+    ),
+    "compute_pose_alignment_bias": (
+        "berkeley_humanoid_lite_lowlevel.robot.pose_alignment",
+        "compute_pose_alignment_bias",
+    ),
+    "apply_pose_alignment_bias": (
+        "berkeley_humanoid_lite_lowlevel.robot.pose_alignment",
+        "apply_pose_alignment_bias",
+    ),
+    "remove_pose_alignment_bias": (
+        "berkeley_humanoid_lite_lowlevel.robot.pose_alignment",
+        "remove_pose_alignment_bias",
     ),
     "GamepadCommandSource": ("berkeley_humanoid_lite_lowlevel.robot.command_source", "GamepadCommandSource"),
     "LocomotionCommand": ("berkeley_humanoid_lite_lowlevel.robot.command_source", "LocomotionCommand"),

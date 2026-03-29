@@ -20,6 +20,11 @@ from .locomotion_specification import (
     LocomotionRobotSpecification,
     build_default_locomotion_robot_specification,
 )
+from .pose_alignment import (
+    PoseAlignmentStore,
+    apply_pose_alignment_bias,
+    remove_pose_alignment_bias,
+)
 
 
 class LocomotionRobot:
@@ -32,6 +37,7 @@ class LocomotionRobot:
         self,
         specification: LocomotionRobotSpecification | None = None,
         calibration_store: CalibrationStore | None = None,
+        pose_alignment_store: PoseAlignmentStore | None = None,
         *,
         enable_imu: bool = True,
         enable_command_source: bool = True,
@@ -45,6 +51,7 @@ class LocomotionRobot:
     ) -> None:
         self.specification = specification or build_default_locomotion_robot_specification()
         self.calibration_store = calibration_store or CalibrationStore()
+        self.pose_alignment_store = pose_alignment_store or PoseAlignmentStore()
         self.dry_run = dry_run
         self.imu_wait_timeout = float(imu_wait_timeout)
         self.require_imu_ready = require_imu_ready
@@ -55,6 +62,9 @@ class LocomotionRobot:
         self.actuators = LocomotionActuatorArray(
             self.specification,
             position_offsets=position_offsets,
+        )
+        self.pose_alignment_bias = self.pose_alignment_store.load_pose_alignment_bias(
+            self.specification.joint_count
         )
 
         effective_imu_baudrate = self.specification.imu_baudrate if imu_baudrate is None else int(imu_baudrate)
@@ -82,6 +92,8 @@ class LocomotionRobot:
             (self.specification.joint_count,), dtype=np.float32)
         self.active_initialization_positions = self.specification.initialization_positions.copy()
         self.active_initialization_label = "policy_entry"
+        self.policy_joint_position_target = np.zeros(
+            (self.specification.joint_count,), dtype=np.float32)
         self._policy_request_blocked = False
         self._policy_entry_zero_command_steps_remaining = 0
         self._raw_requested_state = LocomotionControlState.INVALID
@@ -103,6 +115,13 @@ class LocomotionRobot:
     @property
     def joint_position_measured(self) -> np.ndarray:
         return self.actuators.joint_position_measured
+
+    @property
+    def policy_joint_position_measured(self) -> np.ndarray:
+        return apply_pose_alignment_bias(
+            self.actuators.joint_position_measured,
+            self.pose_alignment_bias,
+        )
 
     def enter_damping_mode(self) -> None:
         if self.dry_run:
@@ -150,15 +169,21 @@ class LocomotionRobot:
             self.requested_state = requested_state
 
     def _raw_joint_positions_from(self, joint_positions: np.ndarray) -> np.ndarray:
-        positions = np.asarray(joint_positions, dtype=np.float32)
-        return (positions + self.position_offsets) * self.joint_axis_directions
+        hardware_positions = self._hardware_joint_positions_from(joint_positions)
+        return (hardware_positions + self.position_offsets) * self.joint_axis_directions
+
+    def _policy_joint_positions_from(self, hardware_joint_positions: np.ndarray) -> np.ndarray:
+        return apply_pose_alignment_bias(hardware_joint_positions, self.pose_alignment_bias)
+
+    def _hardware_joint_positions_from(self, policy_joint_positions: np.ndarray) -> np.ndarray:
+        return remove_pose_alignment_bias(policy_joint_positions, self.pose_alignment_bias)
 
     def _compute_pose_delta(
         self,
         target_positions: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, str, float]:
         target = np.asarray(target_positions, dtype=np.float32)
-        measured = self.actuators.joint_position_measured
+        measured = self.policy_joint_position_measured
         delta = target - measured
         raw_delta = self._raw_joint_positions_from(target) - self._raw_joint_positions_from(measured)
         if self.specification.joint_count == 0:
@@ -175,6 +200,12 @@ class LocomotionRobot:
             return "unknown"
         return "found" if Path(calibration_path).exists() else "missing"
 
+    def _pose_alignment_file_state(self) -> str:
+        pose_alignment_path = getattr(self.pose_alignment_store, "pose_alignment_path", None)
+        if pose_alignment_path is None:
+            return "unknown"
+        return "found" if Path(pose_alignment_path).exists() else "missing"
+
     def _print_calibration_audit(self) -> None:
         _, _, standing_joint_name, standing_max_abs_delta_deg = self._compute_pose_delta(
             self.specification.standing_positions,
@@ -182,8 +213,18 @@ class LocomotionRobot:
         _, _, initialization_joint_name, initialization_max_abs_delta_deg = self._compute_pose_delta(
             self.specification.initialization_positions,
         )
+        max_abs_bias_deg = (
+            float(np.max(np.abs(np.rad2deg(self.pose_alignment_bias))))
+            if self.pose_alignment_bias.size
+            else 0.0
+        )
         print("Calibration audit:")
         print(f"  file: {self._calibration_file_state()}")
+        print(
+            "  pose alignment:",
+            f"file={self._pose_alignment_file_state()}",
+            f"max_abs_bias_deg={max_abs_bias_deg:.2f}",
+        )
         print(
             "  standing pose:",
             f"max_abs_delta_deg={standing_max_abs_delta_deg:.2f}",
@@ -297,7 +338,7 @@ class LocomotionRobot:
                 [1.0, 0.0, 0.0, 0.0], dtype=np.float32)
             imu_angular_velocity[:] = 0.0
 
-        joint_positions[:] = self.actuators.joint_position_measured[:]
+        joint_positions[:] = self.policy_joint_position_measured[:]
         joint_velocities[:] = self.actuators.joint_velocity_measured[:]
 
         command = self._get_command()
@@ -327,6 +368,7 @@ class LocomotionRobot:
             self.actuators.refresh_measurements()
 
         previous_state = self.state
+        measured_policy_positions = self.policy_joint_position_measured
         requested_state, initialization_positions, restart_initialization = (
             self._resolve_initialization_cycle_inputs()
         )
@@ -338,7 +380,7 @@ class LocomotionRobot:
                 initialization_progress=self.initialization_progress,
                 initialization_step=self.initialization_step,
                 starting_positions=self.starting_positions,
-                measured_positions=self.actuators.joint_position_measured,
+                measured_positions=measured_policy_positions,
                 policy_actions=actions,
                 initialization_positions=initialization_positions,
                 restart_initialization=restart_initialization,
@@ -351,7 +393,10 @@ class LocomotionRobot:
         self.state = result.state
         self.initialization_progress = result.initialization_progress
         self.starting_positions[:] = result.starting_positions
-        self.actuators.joint_position_target[:] = result.joint_position_target
+        self.policy_joint_position_target[:] = result.joint_position_target
+        self.actuators.joint_position_target[:] = self._hardware_joint_positions_from(
+            result.joint_position_target
+        )
         if (
             previous_state != LocomotionControlState.POLICY_CONTROL
             and result.state == LocomotionControlState.POLICY_CONTROL
@@ -381,11 +426,12 @@ class LocomotionRobot:
             requested_state=self.requested_state,
             command_velocity=command_velocity,
             actions=actions,
-            joint_position_target=self.actuators.joint_position_target,
-            joint_position_measured=self.joint_position_measured,
+            joint_position_target=self.policy_joint_position_target,
+            joint_position_measured=self.policy_joint_position_measured,
             position_offsets=self.position_offsets,
             joint_axis_directions=self.joint_axis_directions,
             dry_run=self.dry_run,
+            pose_alignment_bias=self.pose_alignment_bias,
         )
 
     def create_imu_debug_line(self) -> str | None:
