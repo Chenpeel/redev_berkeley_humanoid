@@ -118,11 +118,15 @@ namespace
 RealHumanoid::RealHumanoid(
     const IMUConfiguration &imu_configuration,
     std::string left_leg_bus_name,
-    std::string right_leg_bus_name)
+    std::string right_leg_bus_name,
+    LocomotionSpecificationSource specification_source,
+    std::string hardware_configuration_path)
     : imu_configuration_(imu_configuration),
       left_leg_bus_name_(std::move(left_leg_bus_name)),
       right_leg_bus_name_(std::move(right_leg_bus_name)),
-      specification_(build_leg_locomotion_robot_specification(left_leg_bus_name_, right_leg_bus_name_))
+      specification_source_(specification_source),
+      hardware_configuration_path_(std::move(hardware_configuration_path)),
+      specification_(build_legacy_leg_locomotion_robot_specification(left_leg_bus_name_, right_leg_bus_name_))
 {
   imu = nullptr;
   state = STATE_IDLE;
@@ -144,6 +148,55 @@ RealHumanoid::RealHumanoid(
   for (size_t i = 0; i < N_LOWLEVEL_STATES; i += 1)
   {
     lowlevel_states[i] = 0;
+  }
+
+  printf(
+      "[INFO] <Main>: Locomotion specification source: %s\n",
+      locomotion_specification_source_name(specification_source_));
+
+  const fs::path resolved_hardware_configuration_path =
+      resolve_workspace_path(hardware_configuration_path_);
+  if (specification_source_ == LocomotionSpecificationSource::HardwareConfiguration)
+  {
+    if (!fs::exists(resolved_hardware_configuration_path))
+    {
+      throw std::runtime_error(
+          "Unable to find hardware configuration for locomotion specification: " +
+          resolved_hardware_configuration_path.string());
+    }
+
+    specification_ = build_hardware_config_leg_locomotion_robot_specification(
+        YAML::LoadFile(resolved_hardware_configuration_path.string()),
+        left_leg_bus_name_,
+        right_leg_bus_name_);
+    printf(
+        "[INFO] <Main>: Loaded locomotion specification from %s\n",
+        resolved_hardware_configuration_path.string().c_str());
+  }
+  else if (fs::exists(resolved_hardware_configuration_path))
+  {
+    const LocomotionRobotSpecification hardware_configuration_spec =
+        build_hardware_config_leg_locomotion_robot_specification(
+            YAML::LoadFile(resolved_hardware_configuration_path.string()),
+            left_leg_bus_name_,
+            right_leg_bus_name_);
+    const std::vector<SpecificationAddressMismatch> mismatches =
+        collect_device_id_mismatches(specification_, hardware_configuration_spec);
+    if (!mismatches.empty())
+    {
+      printf(
+          "[WARN] <Main>: Legacy native joint mapping differs from %s. "
+          "Use --spec-source hardware-config to opt into the config-backed mapping.\n",
+          resolved_hardware_configuration_path.string().c_str());
+      for (const SpecificationAddressMismatch &mismatch : mismatches)
+      {
+        printf(
+            "  joint=%s legacy_device_id=%u config_device_id=%u\n",
+            mismatch.joint_name,
+            mismatch.expected_device_id,
+            mismatch.actual_device_id);
+      }
+    }
   }
 
   const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);

@@ -108,7 +108,9 @@ class RealHumanoid {
     RealHumanoid(
         const IMUConfiguration &imu_configuration,
         std::string left_leg_bus_name = DEFAULT_LEFT_LEG_BUS,
-        std::string right_leg_bus_name = DEFAULT_RIGHT_LEG_BUS);
+        std::string right_leg_bus_name = DEFAULT_RIGHT_LEG_BUS,
+        LocomotionSpecificationSource specification_source = LocomotionSpecificationSource::LegacyNative,
+        std::string hardware_configuration_path = DEFAULT_HARDWARE_CONFIGURATION_PATH);
     ~RealHumanoid();
 
     /**
@@ -155,6 +157,8 @@ class RealHumanoid {
     IMUConfiguration imu_configuration_;
     std::string left_leg_bus_name_;
     std::string right_leg_bus_name_;
+    LocomotionSpecificationSource specification_source_ = LocomotionSpecificationSource::LegacyNative;
+    std::string hardware_configuration_path_ = DEFAULT_HARDWARE_CONFIGURATION_PATH;
     LocomotionRobotSpecification specification_;
     IMU *imu;
     SocketCan left_arm_bus;

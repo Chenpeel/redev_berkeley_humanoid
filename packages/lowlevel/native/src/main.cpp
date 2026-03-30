@@ -17,6 +17,8 @@ struct RuntimeCliOptions {
   IMUCliOptions imu_options;
   std::string left_leg_bus = DEFAULT_LEFT_LEG_BUS;
   std::string right_leg_bus = DEFAULT_RIGHT_LEG_BUS;
+  LocomotionSpecificationSource specification_source = LocomotionSpecificationSource::LegacyNative;
+  std::string hardware_configuration_path = DEFAULT_HARDWARE_CONFIGURATION_PATH;
 };
 
 void handle_keyboard_interrupt(int sig) {
@@ -62,6 +64,33 @@ bool parse_runtime_cli_options(
       options->right_leg_bus = value;
       continue;
     }
+    if (argument == "--spec-source") {
+      const char *value = require_value("--spec-source");
+      if (value == nullptr) {
+        return false;
+      }
+      const std::string source = value;
+      if (source == "legacy") {
+        options->specification_source = LocomotionSpecificationSource::LegacyNative;
+        continue;
+      }
+      if (source == "hardware-config") {
+        options->specification_source = LocomotionSpecificationSource::HardwareConfiguration;
+        continue;
+      }
+      *error_message =
+          "Unsupported --spec-source value: " + source +
+          " (expected legacy or hardware-config)";
+      return false;
+    }
+    if (argument == "--hardware-config") {
+      const char *value = require_value("--hardware-config");
+      if (value == nullptr) {
+        return false;
+      }
+      options->hardware_configuration_path = value;
+      continue;
+    }
 
     imu_arguments.push_back(argv[index]);
   }
@@ -84,12 +113,16 @@ int main(int argc, char **argv) {
   if (!parse_runtime_cli_options(argc, argv, &runtime_options, &show_help, &error_message)) {
     fprintf(stderr, "%s\n", error_message.c_str());
     print_imu_usage(argv[0]);
-    printf("       [--left-leg-bus NAME] [--right-leg-bus NAME]\n");
+    printf(
+        "       [--left-leg-bus NAME] [--right-leg-bus NAME]\n"
+        "       [--spec-source legacy|hardware-config] [--hardware-config PATH]\n");
     return 1;
   }
   if (show_help) {
     print_imu_usage(argv[0]);
-    printf("       [--left-leg-bus NAME] [--right-leg-bus NAME]\n");
+    printf(
+        "       [--left-leg-bus NAME] [--right-leg-bus NAME]\n"
+        "       [--spec-source legacy|hardware-config] [--hardware-config PATH]\n");
     return 0;
   }
 
@@ -107,11 +140,17 @@ int main(int argc, char **argv) {
         "<Humanoid> Leg CAN config: left=%s right=%s\n",
         runtime_options.left_leg_bus.c_str(),
         runtime_options.right_leg_bus.c_str());
+    printf(
+        "<Humanoid> Spec config: source=%s hardware_config=%s\n",
+        locomotion_specification_source_name(runtime_options.specification_source),
+        runtime_options.hardware_configuration_path.c_str());
 
     RealHumanoid humanoid(
         imu_configuration,
         runtime_options.left_leg_bus,
-        runtime_options.right_leg_bus);
+        runtime_options.right_leg_bus,
+        runtime_options.specification_source,
+        runtime_options.hardware_configuration_path);
     g_humanoid = &humanoid;
     humanoid.run();
   } catch (const std::exception &error) {

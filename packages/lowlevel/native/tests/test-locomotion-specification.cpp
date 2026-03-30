@@ -85,6 +85,63 @@ bool test_leg_specification_exposes_mirrored_joint_pairs()
           "ankle roll pair should mirror indices 5 and 11");
 }
 
+bool test_hardware_config_specification_uses_configuration_device_ids()
+{
+  const YAML::Node robot_configuration = YAML::Load(R"(
+left_hip_roll_joint: {device_id: 1}
+left_hip_yaw_joint: {device_id: 3}
+left_hip_pitch_joint: {device_id: 5}
+left_knee_pitch_joint: {device_id: 7}
+left_ankle_pitch_joint: {device_id: 11}
+left_ankle_roll_joint: {device_id: 13}
+right_hip_roll_joint: {device_id: 2}
+right_hip_yaw_joint: {device_id: 4}
+right_hip_pitch_joint: {device_id: 6}
+right_knee_pitch_joint: {device_id: 8}
+right_ankle_pitch_joint: {device_id: 12}
+right_ankle_roll_joint: {device_id: 14}
+)");
+
+  const LocomotionRobotSpecification specification =
+      build_hardware_config_leg_locomotion_robot_specification(robot_configuration, "can2", "can3");
+
+  return expect_true(specification.joint_addresses[0].bus_name == "can2", "hardware-config spec should keep left bus override") &&
+      expect_true(specification.joint_addresses[6].bus_name == "can3", "hardware-config spec should keep right bus override") &&
+      expect_true(specification.joint_addresses[0].device_id == 1, "hardware-config spec should use config device id for left hip roll") &&
+      expect_true(specification.joint_addresses[2].device_id == 5, "hardware-config spec should use config device id for left hip pitch") &&
+      expect_true(specification.joint_addresses[6].device_id == 2, "hardware-config spec should use config device id for right hip roll");
+}
+
+bool test_collect_device_id_mismatches_reports_legacy_vs_hardware_config_difference()
+{
+  const LocomotionRobotSpecification legacy_specification =
+      build_legacy_leg_locomotion_robot_specification();
+  const YAML::Node robot_configuration = YAML::Load(R"(
+left_hip_roll_joint: {device_id: 1}
+left_hip_yaw_joint: {device_id: 3}
+left_hip_pitch_joint: {device_id: 5}
+left_knee_pitch_joint: {device_id: 7}
+left_ankle_pitch_joint: {device_id: 11}
+left_ankle_roll_joint: {device_id: 13}
+right_hip_roll_joint: {device_id: 2}
+right_hip_yaw_joint: {device_id: 4}
+right_hip_pitch_joint: {device_id: 6}
+right_knee_pitch_joint: {device_id: 8}
+right_ankle_pitch_joint: {device_id: 12}
+right_ankle_roll_joint: {device_id: 14}
+)");
+  const LocomotionRobotSpecification hardware_specification =
+      build_hardware_config_leg_locomotion_robot_specification(robot_configuration);
+
+  const std::vector<SpecificationAddressMismatch> mismatches =
+      collect_device_id_mismatches(legacy_specification, hardware_specification);
+
+  return expect_true(mismatches.size() == 4, "legacy and hardware-config specs should differ on four device ids") &&
+      expect_true(std::string(mismatches[0].joint_name) == "left_hip_roll_joint", "first mismatch should be left hip roll") &&
+      expect_true(mismatches[0].expected_device_id == 5, "legacy left hip roll should stay 5") &&
+      expect_true(mismatches[0].actual_device_id == 1, "hardware-config left hip roll should be 1");
+}
+
 }  // namespace
 
 int main()
@@ -100,6 +157,8 @@ int main()
       {"leg_specification_preserves_current_native_device_mapping", test_leg_specification_preserves_current_native_device_mapping},
       {"leg_specification_exposes_expected_pose_templates", test_leg_specification_exposes_expected_pose_templates},
       {"leg_specification_exposes_mirrored_joint_pairs", test_leg_specification_exposes_mirrored_joint_pairs},
+      {"hardware_config_specification_uses_configuration_device_ids", test_hardware_config_specification_uses_configuration_device_ids},
+      {"collect_device_id_mismatches_reports_legacy_vs_hardware_config_difference", test_collect_device_id_mismatches_reports_legacy_vs_hardware_config_difference},
   };
 
   bool ok = true;
