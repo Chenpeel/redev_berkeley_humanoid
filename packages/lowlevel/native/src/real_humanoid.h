@@ -14,6 +14,7 @@
 #include "control_state.h"
 #include "loop_function.h"
 #include "locomotion_parity.h"
+#include "locomotion_specification.h"
 #include "motor_controller.h"
 #include "imu.h"
 #include "udp.h"
@@ -24,11 +25,6 @@
 
 #define N_LOWLEVEL_STATES       (4+3+12+12+1+3)
 #define N_LOWLEVEL_COMMANDS     12
-
-constexpr const char *DEFAULT_LEFT_LEG_BUS = "can0";
-constexpr const char *DEFAULT_RIGHT_LEG_BUS = "can1";
-
-
 
 static inline float deg2rad(float deg) {
     return deg * M_PI / 180.0f;
@@ -104,20 +100,10 @@ class RealHumanoid {
     float joint_kp[N_JOINTS] = {0};
     float joint_kd[N_JOINTS] = {0};
     float torque_limit[N_JOINTS] = {0};
-    JointArray standing_positions_ = kDefaultStandingPositions;
-    JointArray policy_entry_positions_ = kDefaultPolicyEntryPositions;
     JointArray active_initialization_positions_ = kDefaultPolicyEntryPositions;
     JointArray pose_alignment_bias_{};
     InitializationTarget active_initialization_target_ = InitializationTarget::kPolicyEntry;
-
-    float joint_axis_directions[N_JOINTS] = {
-      -1, 1, -1,
-      -1,
-      -1, 1,
-      -1, 1, 1,
-       1,
-       1, 1
-    };
+    JointArray policy_entry_positions_ = kDefaultPolicyEntryPositions;
 
     RealHumanoid(
         const IMUConfiguration &imu_configuration,
@@ -169,6 +155,7 @@ class RealHumanoid {
     IMUConfiguration imu_configuration_;
     std::string left_leg_bus_name_;
     std::string right_leg_bus_name_;
+    LocomotionRobotSpecification specification_;
     IMU *imu;
     SocketCan left_arm_bus;
     SocketCan right_arm_bus;

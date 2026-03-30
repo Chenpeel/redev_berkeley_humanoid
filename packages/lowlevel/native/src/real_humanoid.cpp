@@ -121,7 +121,8 @@ RealHumanoid::RealHumanoid(
     std::string right_leg_bus_name)
     : imu_configuration_(imu_configuration),
       left_leg_bus_name_(std::move(left_leg_bus_name)),
-      right_leg_bus_name_(std::move(right_leg_bus_name))
+      right_leg_bus_name_(std::move(right_leg_bus_name)),
+      specification_(build_leg_locomotion_robot_specification(left_leg_bus_name_, right_leg_bus_name_))
 {
   imu = nullptr;
   state = STATE_IDLE;
@@ -251,7 +252,7 @@ void RealHumanoid::control_loop()
       requested_state,
       init_percentage,
       active_initialization_target_,
-      standing_positions_,
+      specification_.standing_positions,
       policy_entry_positions_,
       to_joint_array(position_measured),
       policy_entry_gate_max_abs_delta_deg_);
@@ -261,9 +262,9 @@ void RealHumanoid::control_loop()
     if (!policy_request_blocked_)
     {
       printf(
-          "Policy gate blocked: standing pose max_abs_delta_deg=%.2f worst_joint=%zu limit=%.2f\n",
+          "Policy gate blocked: standing pose max_abs_delta_deg=%.2f worst_joint=%s limit=%.2f\n",
           initialization_decision.gate_summary.max_abs_delta_deg,
-          initialization_decision.gate_summary.worst_index,
+          specification_.joint_addresses[initialization_decision.gate_summary.worst_index].joint_name,
           policy_entry_gate_max_abs_delta_deg_);
       printf("Enter standing initialization before requesting policy control.\n");
     }
@@ -413,7 +414,7 @@ void RealHumanoid::control_loop()
   // execute every 4 control loops
   if (control_loop_count >= (int)std::round(config_policy_dt_ / config_control_dt_))
   {
-    if (state == STATE_IDLE || state == STATE_RL_RUNNING)
+    if (should_publish_policy_observations(state))
     {
       size_t expected_bytes = sizeof(float) * N_LOWLEVEL_STATES;
       ssize_t actual_bytes = sendto(udp.sockfd, lowlevel_states, expected_bytes, 0, (const struct sockaddr *)&udp.send_addr, sizeof(udp.send_addr));
@@ -594,7 +595,7 @@ void RealHumanoid::udp_recv()
 void RealHumanoid::print_calibration_audit() const
 {
   const PoseDeltaSummary standing_summary = compute_pose_delta_summary(
-      standing_positions_,
+      specification_.standing_positions,
       to_joint_array(position_measured));
   const PoseDeltaSummary initialization_summary = compute_pose_delta_summary(
       policy_entry_positions_,
@@ -613,13 +614,13 @@ void RealHumanoid::print_calibration_audit() const
       pose_alignment_file_found_ ? "found" : "missing",
       max_abs_bias_deg);
   printf(
-      "  standing pose: max_abs_delta_deg=%.2f worst_joint=%zu\n",
+      "  standing pose: max_abs_delta_deg=%.2f worst_joint=%s\n",
       standing_summary.max_abs_delta_deg,
-      standing_summary.worst_index);
+      specification_.joint_addresses[standing_summary.worst_index].joint_name);
   printf(
-      "  initialization pose: max_abs_delta_deg=%.2f worst_joint=%zu\n",
+      "  initialization pose: max_abs_delta_deg=%.2f worst_joint=%s\n",
       initialization_summary.max_abs_delta_deg,
-      initialization_summary.worst_index);
+      specification_.joint_addresses[initialization_summary.worst_index].joint_name);
 }
 
 void RealHumanoid::update_joints()
@@ -632,47 +633,27 @@ void RealHumanoid::update_joints()
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
     joint_ptrs[i]->set_target_position(
-        (hardware_position_target[i] + position_offsets[i]) * joint_axis_directions[i]);
+        (hardware_position_target[i] + position_offsets[i]) * specification_.joint_axis_directions[i]);
     // native 低层当前只做位置控制，PDO2 的速度目标保持为零。
     joint_ptrs[i]->set_target_velocity(0.0f);
   }
 
-  joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_ROLL_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_ROLL_JOINT]->read_pdo_2();
-
-  joint_ptrs[LEG_LEFT_HIP_YAW_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_YAW_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_HIP_YAW_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_YAW_JOINT]->read_pdo_2();
-
-  joint_ptrs[LEG_LEFT_HIP_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_HIP_PITCH_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_HIP_PITCH_JOINT]->read_pdo_2();
-
-  joint_ptrs[LEG_LEFT_KNEE_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_KNEE_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_KNEE_PITCH_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_KNEE_PITCH_JOINT]->read_pdo_2();
-
-  joint_ptrs[LEG_LEFT_ANKLE_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_ANKLE_PITCH_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_ANKLE_PITCH_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_ANKLE_PITCH_JOINT]->read_pdo_2();
-
-  joint_ptrs[LEG_LEFT_ANKLE_ROLL_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT]->write_pdo_2();
-  joint_ptrs[LEG_LEFT_ANKLE_ROLL_JOINT]->read_pdo_2();
-  joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT]->read_pdo_2();
+  for (const auto &mirrored_pair : specification_.mirrored_joint_pairs)
+  {
+    const size_t left_index = mirrored_pair.first;
+    const size_t right_index = mirrored_pair.second;
+    joint_ptrs[left_index]->write_pdo_2();
+    joint_ptrs[right_index]->write_pdo_2();
+    joint_ptrs[left_index]->read_pdo_2();
+    joint_ptrs[right_index]->read_pdo_2();
+  }
 
   /* update measured positions from joint controller */
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
     hardware_position_measured[i] =
-        joint_ptrs[i]->get_measured_position() * joint_axis_directions[i] - position_offsets[i];
-    velocity_measured[i] = joint_ptrs[i]->get_measured_velocity() * joint_axis_directions[i];
+        joint_ptrs[i]->get_measured_position() * specification_.joint_axis_directions[i] - position_offsets[i];
+    velocity_measured[i] = joint_ptrs[i]->get_measured_velocity() * specification_.joint_axis_directions[i];
   }
 
   copy_joint_array(
@@ -775,21 +756,26 @@ void RealHumanoid::initialize()
   // joint_ptrs[ARM_RIGHT_ELBOW_PITCH_JOINT] = std::make_shared<MotorController>(&right_arm_bus, 8);
   // joint_ptrs[ARM_RIGHT_ELBOW_ROLL_JOINT] = std::make_shared<MotorController>(&right_arm_bus, 10);
 
-  // left leg
-  joint_ptrs[LEG_LEFT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 5);
-  joint_ptrs[LEG_LEFT_HIP_YAW_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 3);
-  joint_ptrs[LEG_LEFT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 1);
-  joint_ptrs[LEG_LEFT_KNEE_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 7);
-  joint_ptrs[LEG_LEFT_ANKLE_PITCH_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 11);
-  joint_ptrs[LEG_LEFT_ANKLE_ROLL_JOINT] = std::make_shared<MotorController>(&left_leg_bus, 13);
+  for (size_t index = 0; index < specification_.joint_addresses.size(); ++index)
+  {
+    const JointTransportAddress &address = specification_.joint_addresses[index];
+    SocketCan *bus = nullptr;
+    if (address.bus_name == left_leg_bus_name_)
+    {
+      bus = &left_leg_bus;
+    }
+    else if (address.bus_name == right_leg_bus_name_)
+    {
+      bus = &right_leg_bus;
+    }
+    else
+    {
+      throw std::runtime_error(
+          "Unsupported bus name in native locomotion specification: " + address.bus_name);
+    }
 
-  // right leg
-  joint_ptrs[LEG_RIGHT_HIP_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 6);
-  joint_ptrs[LEG_RIGHT_HIP_YAW_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 4);
-  joint_ptrs[LEG_RIGHT_HIP_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 2);
-  joint_ptrs[LEG_RIGHT_KNEE_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 8);
-  joint_ptrs[LEG_RIGHT_ANKLE_PITCH_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 12);
-  joint_ptrs[LEG_RIGHT_ANKLE_ROLL_JOINT] = std::make_shared<MotorController>(&right_leg_bus, 14);
+    joint_ptrs[index] = std::make_shared<MotorController>(bus, address.device_id);
+  }
 
 #if DEBUG_DISABLE_TRANSPORTS == 0
   for (int i = 0; i < N_JOINTS; i += 1)

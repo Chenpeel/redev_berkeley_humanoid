@@ -167,6 +167,14 @@ bool test_cycle_policy_control_to_idle_requests_damping()
       expect_joint_array(result.joint_position_target, actions, "idle transition should preserve final actions");
 }
 
+bool test_publish_policy_observations_in_initializing_state()
+{
+  return expect_true(should_publish_policy_observations(STATE_IDLE), "idle should publish observations") &&
+      expect_true(should_publish_policy_observations(STATE_RL_INIT), "initializing should publish observations") &&
+      expect_true(should_publish_policy_observations(STATE_RL_RUNNING), "running should publish observations") &&
+      expect_true(!should_publish_policy_observations(STATE_ERROR), "error state should not publish observations");
+}
+
 }  // namespace
 
 int main()
@@ -185,6 +193,7 @@ int main()
       {"policy_gate_blocks_large_delta", test_policy_gate_blocks_large_delta},
       {"cycle_idle_to_initializing_captures_measurement", test_cycle_idle_to_initializing_captures_measurement},
       {"cycle_policy_control_to_idle_requests_damping", test_cycle_policy_control_to_idle_requests_damping},
+      {"publish_policy_observations_in_initializing_state", test_publish_policy_observations_in_initializing_state},
   };
 
   bool ok = true;

@@ -161,6 +161,10 @@ struct LocomotionCycleResult {
   bool enter_damping_mode = false;
 };
 
+inline bool should_publish_policy_observations(ControllerState state) {
+  return state == STATE_IDLE || state == STATE_RL_INIT || state == STATE_RL_RUNNING;
+}
+
 inline LocomotionCycleResult advance_locomotion_cycle(const LocomotionCycleContext &context) {
   if (context.restart_initialization) {
     return LocomotionCycleResult{
