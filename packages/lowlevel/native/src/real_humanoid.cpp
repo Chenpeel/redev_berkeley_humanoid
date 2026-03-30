@@ -1,6 +1,7 @@
 // Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <cstring>
 #include <stdexcept>
@@ -16,6 +17,48 @@ namespace
   namespace fs = std::filesystem;
   constexpr double kImuReadyTimeoutSeconds = 2.0;
   constexpr double kImuReadyMaxStalenessSeconds = 0.5;
+
+  JointArray to_joint_array(const float *values)
+  {
+    JointArray output{};
+    for (size_t index = 0; index < output.size(); ++index)
+    {
+      output[index] = values[index];
+    }
+    return output;
+  }
+
+  void copy_joint_array(const JointArray &source, float *destination)
+  {
+    for (size_t index = 0; index < source.size(); ++index)
+    {
+      destination[index] = source[index];
+    }
+  }
+
+  bool load_yaml_sequence(
+      const YAML::Node &node,
+      const char *key,
+      JointArray *output)
+  {
+    const YAML::Node sequence = node[key];
+    if (!sequence || !sequence.IsSequence())
+    {
+      return false;
+    }
+    if (sequence.size() != output->size())
+    {
+      throw std::runtime_error(
+          std::string("Expected ") + key + " to have length " +
+          std::to_string(output->size()) + ", got " +
+          std::to_string(sequence.size()));
+    }
+    for (size_t index = 0; index < output->size(); ++index)
+    {
+      (*output)[index] = sequence[index].as<float>();
+    }
+    return true;
+  }
 
   bool is_workspace_root(const fs::path &candidate)
   {
@@ -72,14 +115,6 @@ namespace
 
 } // namespace
 
-static float linear_interpolate(float start, float end, float percentage)
-{
-  float target;
-  percentage = std::fmin(std::fmax(percentage, 0.0f), 1.0f);
-  target = start * (1.f - percentage) + end * percentage;
-  return target;
-}
-
 RealHumanoid::RealHumanoid(
     const IMUConfiguration &imu_configuration,
     std::string left_leg_bus_name,
@@ -96,6 +131,7 @@ RealHumanoid::RealHumanoid(
   {
     position_target[i] = 0;
     position_measured[i] = 0;
+    hardware_position_measured[i] = 0;
     velocity_measured[i] = 0;
     starting_positions[i] = 0;
   }
@@ -112,6 +148,7 @@ RealHumanoid::RealHumanoid(
   const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);
   if (fs::exists(calibration_path))
   {
+    calibration_file_found_ = true;
     // calibration.yaml stores offsets derived from the specification-defined
     // calibration reference pose. These offsets are not captured at the
     // farthest mechanical joint limits.
@@ -128,10 +165,35 @@ RealHumanoid::RealHumanoid(
         calibration_path.string().c_str());
   }
 
+  const fs::path pose_alignment_path = resolve_workspace_path(POSE_ALIGNMENT_PATH);
+  if (fs::exists(pose_alignment_path))
+  {
+    pose_alignment_file_found_ = true;
+    YAML::Node pose_alignment_config = YAML::LoadFile(pose_alignment_path.string());
+    if (!load_yaml_sequence(pose_alignment_config, "pose_alignment_bias", &pose_alignment_bias_))
+    {
+      throw std::runtime_error(
+          "Pose alignment file is missing pose_alignment_bias: " +
+          pose_alignment_path.string());
+    }
+  }
+  else
+  {
+    printf(
+        "[INFO] <Main>: Pose alignment file %s not found, using zero bias\n",
+        pose_alignment_path.string().c_str());
+  }
+
   printf("loaded joint offsets: ");
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
     printf("%.3f ", position_offsets[i]);
+  }
+  printf("\n");
+  printf("loaded pose alignment bias: ");
+  for (size_t i = 0; i < N_JOINTS; i += 1)
+  {
+    printf("%.3f ", pose_alignment_bias_[i]);
   }
   printf("\n");
   printf(
@@ -151,6 +213,8 @@ RealHumanoid::RealHumanoid(
     joint_kd[i] = policy_config["joint_kd"][i].as<float>();
     torque_limit[i] = policy_config["effort_limits"][i].as<float>();
   }
+  load_yaml_sequence(policy_config, "default_joint_positions", &policy_entry_positions_);
+  active_initialization_positions_ = policy_entry_positions_;
   config_control_dt_ = policy_config["control_dt"].as<float>();
   config_policy_dt_ = policy_config["policy_dt"].as<float>();
 }
@@ -176,92 +240,104 @@ void RealHumanoid::control_loop()
     stick_command_velocity_yaw = stick_command_velocity_yaw_;
   }
 
-  switch (state)
+  if (requested_state != STATE_RL_RUNNING)
   {
-  case STATE_IDLE:
-    /* In this state, the motor positions are held at the current measured positions */
-    /* When Y is pressed, the robot will switch to RL initialization mode */
+    policy_request_blocked_ = false;
+  }
 
+  const ControllerState previous_state = state;
+  const InitializationDecision initialization_decision = resolve_initialization_decision(
+      state,
+      requested_state,
+      init_percentage,
+      active_initialization_target_,
+      standing_positions_,
+      policy_entry_positions_,
+      to_joint_array(position_measured),
+      policy_entry_gate_max_abs_delta_deg_);
+
+  if (initialization_decision.policy_gate_blocked)
+  {
+    if (!policy_request_blocked_)
+    {
+      printf(
+          "Policy gate blocked: standing pose max_abs_delta_deg=%.2f worst_joint=%zu limit=%.2f\n",
+          initialization_decision.gate_summary.max_abs_delta_deg,
+          initialization_decision.gate_summary.worst_index,
+          policy_entry_gate_max_abs_delta_deg_);
+      printf("Enter standing initialization before requesting policy control.\n");
+    }
+    policy_request_blocked_ = true;
+  }
+
+  active_initialization_target_ = initialization_decision.target;
+  active_initialization_positions_ = initialization_decision.target_positions;
+
+  const LocomotionCycleResult cycle_result = advance_locomotion_cycle(
+      LocomotionCycleContext{
+          state,
+          initialization_decision.effective_requested_state,
+          init_percentage,
+          kDefaultInitializationStep,
+          to_joint_array(starting_positions),
+          to_joint_array(position_measured),
+          to_joint_array(command_snapshot),
+          active_initialization_positions_,
+          initialization_decision.restart_initialization,
+      });
+
+  if (cycle_result.enter_position_mode)
+  {
+    printf("Switching to initialization mode\n");
+  }
+  if (initialization_decision.restart_initialization)
+  {
+    printf("Restarting initialization towards policy entry pose\n");
+  }
+  if (cycle_result.enter_damping_mode)
+  {
+    printf("Switching to idle mode\n");
+  }
+  if (previous_state != STATE_RL_RUNNING && cycle_result.state == STATE_RL_RUNNING)
+  {
+    printf("Switching to RL running mode\n");
+    policy_entry_zero_command_steps_remaining_ = policy_entry_zero_command_steps_;
+  }
+
+  state = cycle_result.state;
+  init_percentage = cycle_result.initialization_progress;
+  copy_joint_array(cycle_result.starting_positions, starting_positions);
+  copy_joint_array(cycle_result.joint_position_target, position_target);
+
+#if DEBUG_DISABLE_TRANSPORTS == 0
+  if (cycle_result.enter_position_mode)
+  {
     for (int i = 0; i < N_JOINTS; i += 1)
     {
-      position_target[i] = position_measured[i];
+      usleep(5);
+      joint_ptrs[i]->feed();
+      joint_ptrs[i]->set_mode(MODE_POSITION);
     }
-    if (requested_state == STATE_RL_INIT || requested_state == STATE_RL_RUNNING)
-    {
-      printf("Switching to RL initialization mode\n");
-      state = STATE_RL_INIT;
-
-      for (int i = 0; i < N_JOINTS; i += 1)
-      {
-        starting_positions[i] = position_target[i];
-        usleep(5);
-        joint_ptrs[i]->feed();
-        joint_ptrs[i]->set_mode(MODE_POSITION);
-      }
-      init_percentage = 0.0;
-    }
-    break;
-
-  case STATE_RL_INIT:
-    /* In this state, the robot will hold the getup position */
-    // printf("init: %.3f\n", init_percentage);
-
-    if (init_percentage < 1.0)
-    {
-      init_percentage += 1 / 200.0;
-      init_percentage = init_percentage < 1.0 ? init_percentage : 1.0;
-
-      for (size_t i = 0; i < N_JOINTS; i += 1)
-      {
-        position_target[i] = linear_interpolate(starting_positions[i], rl_init_positions[i], init_percentage);
-      }
-    }
-    else
-    {
-      if (requested_state == STATE_RL_RUNNING)
-      {
-        printf("Switching to RL running mode\n");
-        state = requested_state;
-      }
-      if (requested_state == STATE_IDLE)
-      {
-        printf("Switching to idle mode\n");
-        state = requested_state;
-
-        for (int i = 0; i < N_JOINTS; i += 1)
-        {
-          usleep(5);
-          joint_ptrs[i]->set_mode(MODE_DAMPING);
-        }
-      }
-    }
-    break;
-
-  case STATE_RL_RUNNING:
-    /* In this state, the robot will follow the policy */
-    for (int i = 0; i < N_LOWLEVEL_COMMANDS; i += 1)
-    {
-      position_target[i] = command_snapshot[i];
-    }
-
-    if (requested_state == STATE_IDLE)
-    {
-      printf("Switching to idle mode\n");
-      state = requested_state;
-
-      for (int i = 0; i < N_JOINTS; i += 1)
-      {
-        usleep(5);
-        joint_ptrs[i]->set_mode(MODE_DAMPING);
-      }
-    }
-
-    break;
   }
+  if (cycle_result.enter_damping_mode)
+  {
+    for (int i = 0; i < N_JOINTS; i += 1)
+    {
+      usleep(5);
+      joint_ptrs[i]->set_mode(MODE_DAMPING);
+    }
+  }
+#endif
 
 #if DEBUG_DISABLE_TRANSPORTS == 0
   update_joints();
 #endif
+
+  if (!calibration_audit_printed_)
+  {
+    print_calibration_audit();
+    calibration_audit_printed_ = true;
+  }
 
 #if DEBUG_JOINT_DATA_LOGGING == 1
   printf("%d %.2f \t%.2f \t%.2f \t- %.2f \t- %.2f \t%.2f \t",
@@ -320,9 +396,19 @@ void RealHumanoid::control_loop()
   lowlevel_states[31] = state;
 
   /* command velocity */
-  lowlevel_states[32] = stick_command_velocity_x;
-  lowlevel_states[33] = stick_command_velocity_y;
-  lowlevel_states[34] = stick_command_velocity_yaw;
+  if (policy_entry_zero_command_steps_remaining_ > 0)
+  {
+    lowlevel_states[32] = 0.0f;
+    lowlevel_states[33] = 0.0f;
+    lowlevel_states[34] = 0.0f;
+    policy_entry_zero_command_steps_remaining_ -= 1;
+  }
+  else
+  {
+    lowlevel_states[32] = stick_command_velocity_x;
+    lowlevel_states[33] = stick_command_velocity_y;
+    lowlevel_states[34] = stick_command_velocity_yaw;
+  }
 
   // execute every 4 control loops
   if (control_loop_count >= (int)std::round(config_policy_dt_ / config_control_dt_))
@@ -505,12 +591,48 @@ void RealHumanoid::udp_recv()
   // TODO: detect if the action is delayed
 }
 
+void RealHumanoid::print_calibration_audit() const
+{
+  const PoseDeltaSummary standing_summary = compute_pose_delta_summary(
+      standing_positions_,
+      to_joint_array(position_measured));
+  const PoseDeltaSummary initialization_summary = compute_pose_delta_summary(
+      policy_entry_positions_,
+      to_joint_array(position_measured));
+
+  float max_abs_bias_deg = 0.0f;
+  for (float bias : pose_alignment_bias_)
+  {
+    max_abs_bias_deg = std::fmax(max_abs_bias_deg, std::fabs(bias * 180.0f / M_PI));
+  }
+
+  printf("Calibration audit:\n");
+  printf("  calibration file: %s\n", calibration_file_found_ ? "found" : "missing");
+  printf(
+      "  pose alignment: file=%s max_abs_bias_deg=%.2f\n",
+      pose_alignment_file_found_ ? "found" : "missing",
+      max_abs_bias_deg);
+  printf(
+      "  standing pose: max_abs_delta_deg=%.2f worst_joint=%zu\n",
+      standing_summary.max_abs_delta_deg,
+      standing_summary.worst_index);
+  printf(
+      "  initialization pose: max_abs_delta_deg=%.2f worst_joint=%zu\n",
+      initialization_summary.max_abs_delta_deg,
+      initialization_summary.worst_index);
+}
+
 void RealHumanoid::update_joints()
 {
+  const JointArray hardware_position_target = remove_pose_alignment_bias(
+      to_joint_array(position_target),
+      pose_alignment_bias_);
+
   /* set target positions to joint controller */
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
-    joint_ptrs[i]->set_target_position((position_target[i] + position_offsets[i]) * joint_axis_directions[i]);
+    joint_ptrs[i]->set_target_position(
+        (hardware_position_target[i] + position_offsets[i]) * joint_axis_directions[i]);
     // native 低层当前只做位置控制，PDO2 的速度目标保持为零。
     joint_ptrs[i]->set_target_velocity(0.0f);
   }
@@ -548,9 +670,16 @@ void RealHumanoid::update_joints()
   /* update measured positions from joint controller */
   for (size_t i = 0; i < N_JOINTS; i += 1)
   {
-    position_measured[i] = joint_ptrs[i]->get_measured_position() * joint_axis_directions[i] - position_offsets[i];
+    hardware_position_measured[i] =
+        joint_ptrs[i]->get_measured_position() * joint_axis_directions[i] - position_offsets[i];
     velocity_measured[i] = joint_ptrs[i]->get_measured_velocity() * joint_axis_directions[i];
   }
+
+  copy_joint_array(
+      apply_pose_alignment_bias(
+          to_joint_array(hardware_position_measured),
+          pose_alignment_bias_),
+      position_measured);
 }
 
 void RealHumanoid::stop()

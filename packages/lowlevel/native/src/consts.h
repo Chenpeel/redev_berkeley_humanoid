@@ -16,6 +16,7 @@
 
 #define POLICY_CONFIG_PATH          "configs/policies/policy_biped_50hz.yaml"
 #define CALIBRATION_PATH            "artifacts/calibration/calibration.yaml"
+#define POSE_ALIGNMENT_PATH         "artifacts/calibration/locomotion_pose_alignment.yaml"
 
 
 #define DEBUG_DISABLE_TRANSPORTS     0

@@ -69,6 +69,12 @@ target_include_directories(test-lowlevel-control PRIVATE src)
 set_property(TARGET test-lowlevel-control PROPERTY CXX_STANDARD 17)
 
 
+# Locomotion parity logic
+add_executable(test-locomotion-parity tests/test-locomotion-parity.cpp)
+target_include_directories(test-locomotion-parity PRIVATE src)
+set_property(TARGET test-locomotion-parity PROPERTY CXX_STANDARD 17)
+
+
 # YAML
 add_executable(test-yaml tests/test-yaml.cpp)
 target_include_directories(test-yaml PRIVATE src)

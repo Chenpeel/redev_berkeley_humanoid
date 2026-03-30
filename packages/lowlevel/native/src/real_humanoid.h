@@ -11,7 +11,9 @@
 #include <yaml-cpp/yaml.h>
 
 #include "consts.h"
+#include "control_state.h"
 #include "loop_function.h"
+#include "locomotion_parity.h"
 #include "motor_controller.h"
 #include "imu.h"
 #include "udp.h"
@@ -31,17 +33,6 @@ constexpr const char *DEFAULT_RIGHT_LEG_BUS = "can1";
 static inline float deg2rad(float deg) {
     return deg * M_PI / 180.0f;
 }
-
-
-enum ControllerState {
-  STATE_ERROR = 0,
-  STATE_IDLE = 1,
-  STATE_RL_INIT,
-  STATE_RL_RUNNING,
-  STATE_GETUP,
-  STATE_HOLD,
-  STATE_GETDOWN,
-};
 
 
 /**
@@ -103,6 +94,7 @@ class RealHumanoid {
   public:
     float position_target[N_JOINTS];
     float position_measured[N_JOINTS];
+    float hardware_position_measured[N_JOINTS];
     float velocity_measured[N_JOINTS];
 
     float starting_positions[N_JOINTS] = {0};
@@ -112,16 +104,11 @@ class RealHumanoid {
     float joint_kp[N_JOINTS] = {0};
     float joint_kd[N_JOINTS] = {0};
     float torque_limit[N_JOINTS] = {0};
-
-    float rl_init_positions[N_JOINTS] = {
-       0.0, 0.0, -0.2,
-       0.4,
-      -0.3, 0.0,
-       0.0, 0.0, -0.2,
-       0.4,
-      -0.3, 0.0
-    };
-
+    JointArray standing_positions_ = kDefaultStandingPositions;
+    JointArray policy_entry_positions_ = kDefaultPolicyEntryPositions;
+    JointArray active_initialization_positions_ = kDefaultPolicyEntryPositions;
+    JointArray pose_alignment_bias_{};
+    InitializationTarget active_initialization_target_ = InitializationTarget::kPolicyEntry;
 
     float joint_axis_directions[N_JOINTS] = {
       -1, 1, -1,
@@ -161,9 +148,16 @@ class RealHumanoid {
     uint8_t stopped = 0;
     ControllerState state = STATE_IDLE;
     ControllerState next_state = STATE_IDLE;
+    bool calibration_file_found_ = false;
+    bool pose_alignment_file_found_ = false;
+    bool calibration_audit_printed_ = false;
+    bool policy_request_blocked_ = false;
 
     float config_control_dt_ = 0.;
     float config_policy_dt_ = 0.;
+    float policy_entry_gate_max_abs_delta_deg_ = kPolicyEntryGateMaxAbsDeltaDeg;
+    int policy_entry_zero_command_steps_ = kPolicyEntryZeroCommandSteps;
+    int policy_entry_zero_command_steps_remaining_ = 0;
 
     float stick_command_velocity_x_ = 0.0;
     float stick_command_velocity_y_ = 0.0;
@@ -242,4 +236,6 @@ class RealHumanoid {
     void update_imu();
 
     void update_joints();
+
+    void print_calibration_audit() const;
 };
