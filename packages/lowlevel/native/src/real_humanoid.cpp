@@ -10,6 +10,7 @@
 
 #include "real_humanoid.h"
 #include "motor_controller_conf.h"
+#include "runtime_paths.h"
 
 namespace
 {
@@ -60,59 +61,6 @@ namespace
     return true;
   }
 
-  bool is_workspace_root(const fs::path &candidate)
-  {
-    return fs::exists(candidate / "pyproject.toml") && fs::exists(candidate / "packages");
-  }
-
-  fs::path find_workspace_root(const fs::path &start_path)
-  {
-    fs::path current = fs::absolute(start_path);
-    if (!fs::is_directory(current))
-    {
-      current = current.parent_path();
-    }
-
-    while (!current.empty())
-    {
-      if (is_workspace_root(current))
-      {
-        return current;
-      }
-
-      const fs::path parent = current.parent_path();
-      if (parent == current)
-      {
-        break;
-      }
-      current = parent;
-    }
-
-    return {};
-  }
-
-  fs::path resolve_workspace_path(const fs::path &relative_path)
-  {
-    if (relative_path.is_absolute())
-    {
-      return relative_path;
-    }
-
-    const fs::path current_working_directory_path = fs::absolute(relative_path);
-    if (fs::exists(current_working_directory_path))
-    {
-      return current_working_directory_path;
-    }
-
-    const fs::path workspace_root = find_workspace_root(__FILE__);
-    if (!workspace_root.empty())
-    {
-      return workspace_root / relative_path;
-    }
-
-    return current_working_directory_path;
-  }
-
 } // namespace
 
 RealHumanoid::RealHumanoid(
@@ -155,10 +103,17 @@ RealHumanoid::RealHumanoid(
       locomotion_specification_source_name(specification_source_));
 
   const fs::path resolved_hardware_configuration_path =
-      resolve_workspace_path(hardware_configuration_path_);
+      runtime_paths::resolve_workspace_path(hardware_configuration_path_);
+  YAML::Node hardware_configuration;
+  bool hardware_configuration_loaded = false;
+  if (fs::exists(resolved_hardware_configuration_path))
+  {
+    hardware_configuration = YAML::LoadFile(resolved_hardware_configuration_path.string());
+    hardware_configuration_loaded = true;
+  }
   if (specification_source_ == LocomotionSpecificationSource::HardwareConfiguration)
   {
-    if (!fs::exists(resolved_hardware_configuration_path))
+    if (!hardware_configuration_loaded)
     {
       throw std::runtime_error(
           "Unable to find hardware configuration for locomotion specification: " +
@@ -166,29 +121,47 @@ RealHumanoid::RealHumanoid(
     }
 
     specification_ = build_hardware_config_leg_locomotion_robot_specification(
-        YAML::LoadFile(resolved_hardware_configuration_path.string()),
+        hardware_configuration,
         left_leg_bus_name_,
         right_leg_bus_name_);
     printf(
         "[INFO] <Main>: Loaded locomotion specification from %s\n",
         resolved_hardware_configuration_path.string().c_str());
   }
-  else if (fs::exists(resolved_hardware_configuration_path))
+  if (hardware_configuration_loaded)
   {
-    const LocomotionRobotSpecification hardware_configuration_spec =
-        build_hardware_config_leg_locomotion_robot_specification(
-            YAML::LoadFile(resolved_hardware_configuration_path.string()),
-            left_leg_bus_name_,
-            right_leg_bus_name_);
-    const std::vector<SpecificationAddressMismatch> mismatches =
-        collect_device_id_mismatches(specification_, hardware_configuration_spec);
-    if (!mismatches.empty())
+    const LocomotionRobotSpecification *expected_specification =
+        specification_source_ == LocomotionSpecificationSource::LegacyNative
+            ? &specification_
+            : nullptr;
+    const HardwareConfigurationAudit hardware_configuration_audit =
+        audit_leg_hardware_configuration(hardware_configuration, expected_specification);
+
+    if (!hardware_configuration_audit.missing_joints.empty() ||
+        !hardware_configuration_audit.missing_required_fields.empty())
+    {
+      printf(
+          "[WARN] <Main>: Hardware configuration audit found incomplete data in %s\n",
+          resolved_hardware_configuration_path.string().c_str());
+      for (const char *joint_name : hardware_configuration_audit.missing_joints)
+      {
+        printf("  missing_joint=%s\n", joint_name);
+      }
+      for (const HardwareConfigurationFieldIssue &issue :
+           hardware_configuration_audit.missing_required_fields)
+      {
+        printf("  missing_field joint=%s field=%s\n", issue.joint_name, issue.field_path);
+      }
+    }
+
+    if (!hardware_configuration_audit.device_id_mismatches.empty())
     {
       printf(
           "[WARN] <Main>: Legacy native joint mapping differs from %s. "
           "Use --spec-source hardware-config to opt into the config-backed mapping.\n",
           resolved_hardware_configuration_path.string().c_str());
-      for (const SpecificationAddressMismatch &mismatch : mismatches)
+      for (const SpecificationAddressMismatch &mismatch :
+           hardware_configuration_audit.device_id_mismatches)
       {
         printf(
             "  joint=%s legacy_device_id=%u config_device_id=%u\n",
@@ -199,7 +172,7 @@ RealHumanoid::RealHumanoid(
     }
   }
 
-  const fs::path calibration_path = resolve_workspace_path(CALIBRATION_PATH);
+  const fs::path calibration_path = runtime_paths::resolve_workspace_path(CALIBRATION_PATH);
   if (fs::exists(calibration_path))
   {
     calibration_file_found_ = true;
@@ -219,7 +192,7 @@ RealHumanoid::RealHumanoid(
         calibration_path.string().c_str());
   }
 
-  const fs::path pose_alignment_path = resolve_workspace_path(POSE_ALIGNMENT_PATH);
+  const fs::path pose_alignment_path = runtime_paths::resolve_workspace_path(POSE_ALIGNMENT_PATH);
   if (fs::exists(pose_alignment_path))
   {
     pose_alignment_file_found_ = true;
@@ -254,7 +227,7 @@ RealHumanoid::RealHumanoid(
       "[INFO] <Main>: These joint offsets must come from the calibration reference pose, "
       "not from forcing the robot to its mechanical limits.\n");
 
-  const fs::path policy_config_path = resolve_workspace_path(POLICY_CONFIG_PATH);
+  const fs::path policy_config_path = runtime_paths::resolve_workspace_path(POLICY_CONFIG_PATH);
   if (!fs::exists(policy_config_path))
   {
     throw std::runtime_error("Unable to find policy config: " + policy_config_path.string());

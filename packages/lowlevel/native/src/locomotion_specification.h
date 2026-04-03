@@ -24,6 +24,26 @@ enum class LocomotionSpecificationSource {
   HardwareConfiguration = 1,
 };
 
+enum class CalibrationLimitSelector {
+  Min = 0,
+  Max = 1,
+};
+
+static constexpr std::array<const char *, N_JOINTS> kLegLocomotionJointNames = {{
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_hip_pitch_joint",
+    "left_knee_pitch_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_hip_pitch_joint",
+    "right_knee_pitch_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+}};
+
 struct JointTransportAddress {
   std::string bus_name;
   uint8_t device_id = 0;
@@ -37,6 +57,7 @@ struct LocomotionRobotSpecification {
   JointArray initialization_positions{};
   JointArray standing_positions{};
   JointArray calibration_reference_positions{};
+  std::array<CalibrationLimitSelector, N_JOINTS> calibration_limit_selectors{};
 };
 
 struct SpecificationAddressMismatch {
@@ -46,12 +67,43 @@ struct SpecificationAddressMismatch {
   uint8_t actual_device_id = 0;
 };
 
+struct HardwareConfigurationFieldIssue {
+  size_t index = 0;
+  const char *joint_name = "";
+  const char *field_path = "";
+};
+
+struct HardwareConfigurationAudit {
+  size_t expected_joint_count = N_JOINTS;
+  std::vector<const char *> missing_joints;
+  std::vector<HardwareConfigurationFieldIssue> missing_required_fields;
+  std::vector<SpecificationAddressMismatch> device_id_mismatches;
+
+  bool is_complete() const {
+    return missing_joints.empty() && missing_required_fields.empty();
+  }
+
+  bool matches_expected_spec() const {
+    return is_complete() && device_id_mismatches.empty();
+  }
+};
+
 inline const char *locomotion_specification_source_name(LocomotionSpecificationSource source) {
   switch (source) {
     case LocomotionSpecificationSource::LegacyNative:
       return "legacy";
     case LocomotionSpecificationSource::HardwareConfiguration:
       return "hardware-config";
+  }
+  return "unknown";
+}
+
+inline const char *calibration_limit_selector_name(CalibrationLimitSelector selector) {
+  switch (selector) {
+    case CalibrationLimitSelector::Min:
+      return "min";
+    case CalibrationLimitSelector::Max:
+      return "max";
   }
   return "unknown";
 }
@@ -78,6 +130,20 @@ inline void populate_common_leg_locomotion_specification(LocomotionRobotSpecific
   specification->initialization_positions = kDefaultPolicyEntryPositions;
   specification->standing_positions = kDefaultStandingPositions;
   specification->calibration_reference_positions = kDefaultStandingPositions;
+  specification->calibration_limit_selectors = {{
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Max,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Max,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Max,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Min,
+      CalibrationLimitSelector::Max,
+  }};
 }
 
 inline LocomotionRobotSpecification build_legacy_leg_locomotion_robot_specification(
@@ -115,24 +181,9 @@ inline LocomotionRobotSpecification build_hardware_config_leg_locomotion_robot_s
     const YAML::Node &robot_configuration,
     const std::string &left_leg_bus = DEFAULT_LEFT_LEG_BUS,
     const std::string &right_leg_bus = DEFAULT_RIGHT_LEG_BUS) {
-  static constexpr std::array<const char *, N_JOINTS> kJointNames = {{
-      "left_hip_roll_joint",
-      "left_hip_yaw_joint",
-      "left_hip_pitch_joint",
-      "left_knee_pitch_joint",
-      "left_ankle_pitch_joint",
-      "left_ankle_roll_joint",
-      "right_hip_roll_joint",
-      "right_hip_yaw_joint",
-      "right_hip_pitch_joint",
-      "right_knee_pitch_joint",
-      "right_ankle_pitch_joint",
-      "right_ankle_roll_joint",
-  }};
-
   LocomotionRobotSpecification specification;
-  for (size_t index = 0; index < kJointNames.size(); ++index) {
-    const char *joint_name = kJointNames[index];
+  for (size_t index = 0; index < kLegLocomotionJointNames.size(); ++index) {
+    const char *joint_name = kLegLocomotionJointNames[index];
     const YAML::Node joint_config = robot_configuration[joint_name];
     if (!joint_config || !joint_config["device_id"]) {
       throw std::runtime_error(std::string("Missing device_id for joint in hardware config: ") + joint_name);
@@ -147,6 +198,62 @@ inline LocomotionRobotSpecification build_hardware_config_leg_locomotion_robot_s
 
   populate_common_leg_locomotion_specification(&specification);
   return specification;
+}
+
+inline HardwareConfigurationAudit audit_leg_hardware_configuration(
+    const YAML::Node &robot_configuration,
+    const LocomotionRobotSpecification *expected_specification = nullptr) {
+  struct JointConfigurationFieldRequirement {
+    const char *group_name;
+    const char *field_name;
+    const char *field_path;
+  };
+  static constexpr std::array<JointConfigurationFieldRequirement, 4> kRequiredFields = {{
+      {"position_controller", "gear_ratio", "position_controller.gear_ratio"},
+      {"motor", "phase_order", "motor.phase_order"},
+      {"motor", "max_calibration_current", "motor.max_calibration_current"},
+      {"encoder", "position_offset", "encoder.position_offset"},
+  }};
+
+  HardwareConfigurationAudit audit;
+  for (size_t index = 0; index < kLegLocomotionJointNames.size(); ++index) {
+    const char *joint_name = kLegLocomotionJointNames[index];
+    const YAML::Node joint_config = robot_configuration[joint_name];
+    if (!joint_config) {
+      audit.missing_joints.push_back(joint_name);
+      continue;
+    }
+
+    const YAML::Node device_id_node = joint_config["device_id"];
+    if (!device_id_node) {
+      audit.missing_required_fields.push_back({index, joint_name, "device_id"});
+    } else if (expected_specification != nullptr) {
+      const uint8_t actual_device_id = static_cast<uint8_t>(device_id_node.as<int>());
+      const uint8_t expected_device_id =
+          expected_specification->joint_addresses[index].device_id;
+      if (expected_device_id != actual_device_id) {
+        audit.device_id_mismatches.push_back({
+            index,
+            joint_name,
+            expected_device_id,
+            actual_device_id,
+        });
+      }
+    }
+
+    for (const JointConfigurationFieldRequirement &required_field : kRequiredFields) {
+      const YAML::Node group_node = joint_config[required_field.group_name];
+      if (!group_node || !group_node[required_field.field_name]) {
+        audit.missing_required_fields.push_back({
+            index,
+            joint_name,
+            required_field.field_path,
+        });
+      }
+    }
+  }
+
+  return audit;
 }
 
 inline std::vector<SpecificationAddressMismatch> collect_device_id_mismatches(
