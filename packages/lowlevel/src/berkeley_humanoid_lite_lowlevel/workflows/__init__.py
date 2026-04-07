@@ -25,7 +25,9 @@ __all__ = [
     "broadcast_gamepad_commands",
     "check_teleoperation_connection",
     "run_teleoperation_idle_loop",
+    "run_teleoperation_ik_result_playback",
     "run_teleoperation_loop",
+    "run_offline_teleoperation_ik",
     "run_teleoperation_solver_demo",
     "stream_gripper_targets",
 ]
@@ -116,9 +118,17 @@ _MODULE_EXPORTS = {
         "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",
         "run_teleoperation_idle_loop",
     ),
+    "run_teleoperation_ik_result_playback": (
+        "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",
+        "run_teleoperation_ik_result_playback",
+    ),
     "run_teleoperation_loop": (
         "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",
         "run_teleoperation_loop",
+    ),
+    "run_offline_teleoperation_ik": (
+        "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",
+        "run_offline_teleoperation_ik",
     ),
     "run_teleoperation_solver_demo": (
         "berkeley_humanoid_lite_lowlevel.workflows.teleoperation",

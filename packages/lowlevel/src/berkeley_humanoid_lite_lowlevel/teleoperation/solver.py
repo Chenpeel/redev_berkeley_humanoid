@@ -2,25 +2,60 @@
 
 from __future__ import annotations
 
-from typing import Any
 import os
 import time
+from typing import Any
 
-from berkeley_humanoid_lite_assets.paths import get_urdf_path
-import meshcat_shapes
 import numpy as np
 import pink
-from pink import solve_ik
-from pink.tasks import FrameTask
-from pink.visualization import start_meshcat_visualizer
 import pinocchio as pin
 import qpsolvers
+from berkeley_humanoid_lite_assets.paths import get_urdf_path
+from pink import solve_ik
+from pink.tasks import FrameTask
+
+
+class _NullViewerNode:
+    def set_transform(self, transform: np.ndarray) -> None:
+        del transform
+
+
+class _NullViewer:
+    def __getitem__(self, key: str) -> _NullViewerNode:
+        del key
+        return _NullViewerNode()
+
+
+class _NullVisualizer:
+    viewer = _NullViewer()
+
+    def display(self, configuration: np.ndarray) -> None:
+        del configuration
+
+
+def _start_meshcat_visualizer(
+    robot: pin.RobotWrapper,
+    *,
+    open_viewer: bool,
+) -> pin.visualize.MeshcatVisualizer:
+    visualizer = pin.visualize.MeshcatVisualizer(
+        robot.model,
+        robot.collision_model,
+        robot.visual_model,
+    )
+    robot.setVisualizer(visualizer, init=False)
+    visualizer.initViewer(open=open_viewer)
+    visualizer.loadViewerModel()
+    return visualizer
 
 
 class TeleoperationIkSolver:
     def __init__(
         self,
         urdf_path: str = str(get_urdf_path()),
+        *,
+        enable_visualizer: bool = True,
+        open_visualizer: bool = True,
     ) -> None:
         urdf_package_path = os.path.dirname(urdf_path)
         self.robot = pin.RobotWrapper.BuildFromURDF(
@@ -29,17 +64,32 @@ class TeleoperationIkSolver:
             root_joint=pin.JointModelFreeFlyer(),
         )
 
-        self.visualizer = start_meshcat_visualizer(self.robot)
+        if enable_visualizer:
+            import meshcat_shapes
+
+            self.visualizer = _start_meshcat_visualizer(
+                self.robot,
+                open_viewer=open_visualizer,
+            )
+            self.viewer = self.visualizer.viewer
+            self._meshcat_shapes = meshcat_shapes
+        else:
+            self.visualizer = _NullVisualizer()
+            self.viewer = self.visualizer.viewer
+            self._meshcat_shapes = None
         self.viewer = self.visualizer.viewer
 
         self.end_effectors = ["arm_left_elbow_roll", "arm_right_elbow_roll"]
-        self.end_effector_ids = [self.robot.model.getFrameId(name) for name in self.end_effectors]
+        self.end_effector_ids = [
+            self.robot.model.getFrameId(name) for name in self.end_effectors
+        ]
         self.num_end_effectors = len(self.end_effectors)
 
-        for name in self.end_effectors:
-            meshcat_shapes.frame(self.viewer[f"{name}_target"], opacity=0.5)
-            meshcat_shapes.frame(self.viewer[f"{name}_vive"], opacity=0.25)
-            meshcat_shapes.frame(self.viewer[name], opacity=1.0)
+        if self._meshcat_shapes is not None:
+            for name in self.end_effectors:
+                self._meshcat_shapes.frame(self.viewer[f"{name}_target"], opacity=0.5)
+                self._meshcat_shapes.frame(self.viewer[f"{name}_vive"], opacity=0.25)
+                self._meshcat_shapes.frame(self.viewer[name], opacity=1.0)
 
         self.end_effector_tasks = [
             FrameTask(
@@ -59,7 +109,10 @@ class TeleoperationIkSolver:
             )
         ]
 
-        if any(end_effector_id < 0 or end_effector_id >= len(self.robot.model.frames) for end_effector_id in self.end_effector_ids):
+        if any(
+            end_effector_id < 0 or end_effector_id >= len(self.robot.model.frames)
+            for end_effector_id in self.end_effector_ids
+        ):
             raise ValueError("End effector name not found in model")
 
         self.solver = qpsolvers.available_solvers[0]

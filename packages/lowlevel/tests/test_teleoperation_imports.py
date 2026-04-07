@@ -28,11 +28,15 @@ class TeleoperationImportTests(unittest.TestCase):
 
         check_teleoperation_connection = workflows.check_teleoperation_connection
         run_teleoperation_idle_loop = workflows.run_teleoperation_idle_loop
+        run_offline_teleoperation_ik = workflows.run_offline_teleoperation_ik
+        run_teleoperation_ik_result_playback = workflows.run_teleoperation_ik_result_playback
         run_teleoperation_solver_demo = workflows.run_teleoperation_solver_demo
         stream_gripper_targets = workflows.stream_gripper_targets
 
         self.assertTrue(callable(check_teleoperation_connection))
         self.assertTrue(callable(run_teleoperation_idle_loop))
+        self.assertTrue(callable(run_offline_teleoperation_ik))
+        self.assertTrue(callable(run_teleoperation_ik_result_playback))
         self.assertTrue(callable(run_teleoperation_solver_demo))
         self.assertTrue(callable(stream_gripper_targets))
         self.assertIn(f"{workflow_prefix}.teleoperation", sys.modules)
@@ -47,6 +51,21 @@ class TeleoperationImportTests(unittest.TestCase):
         teleoperation = importlib.import_module(teleoperation_prefix)
 
         self.assertIsNotNone(teleoperation)
+        self.assertNotIn(f"{teleoperation_prefix}.solver", sys.modules)
+
+    def test_fake_input_exports_do_not_import_solver(self) -> None:
+        teleoperation_prefix = "berkeley_humanoid_lite_lowlevel.teleoperation"
+        self._clear_modules(teleoperation_prefix)
+
+        teleoperation = importlib.import_module(teleoperation_prefix)
+        supported_patterns = teleoperation.SUPPORTED_FAKE_TELEOP_PATTERNS
+        build_fake_input_frame = teleoperation.build_fake_input_frame
+
+        self.assertEqual(
+            supported_patterns,
+            ("static_pose", "single_arm_sweep", "dual_arm_circle"),
+        )
+        self.assertTrue(callable(build_fake_input_frame))
         self.assertNotIn(f"{teleoperation_prefix}.solver", sys.modules)
 
 
