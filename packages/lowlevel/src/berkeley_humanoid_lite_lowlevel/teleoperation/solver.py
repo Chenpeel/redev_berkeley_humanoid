@@ -162,6 +162,8 @@ class TeleoperationIkSolver:
         for index in range(self.num_end_effectors):
             if self.button_data[index] and not self.last_button_data[index]:
                 self.vive_last_poses[index] = vive_poses[index].copy()
+                # 首次 clutch 进入时，用当前机械臂末端位姿作为相对控制锚点，避免第一次抓取跳变。
+                self.robot_last_poses[index] = data.oMf[self.end_effector_ids[index]].copy()
             if not self.button_data[index] and self.last_button_data[index]:
                 self.robot_last_poses[index] = data.oMf[self.end_effector_ids[index]].copy()
             if self.button_data[index]:
