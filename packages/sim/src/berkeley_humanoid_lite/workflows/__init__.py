@@ -6,6 +6,8 @@ __all__ = [
     "run_mujoco_joint_position_bridge",
     "run_mujoco_policy_loop",
     "run_observation_visualizer",
+    "run_quest_webxr_observation_visualizer",
+    "build_quest_teleoperation_visualizer_observation",
 ]
 
 
@@ -22,6 +24,14 @@ _MODULE_EXPORTS = {
     "run_observation_visualizer": (
         "berkeley_humanoid_lite.workflows.sim2real",
         "run_observation_visualizer",
+    ),
+    "run_quest_webxr_observation_visualizer": (
+        "berkeley_humanoid_lite.workflows.sim2real",
+        "run_quest_webxr_observation_visualizer",
+    ),
+    "build_quest_teleoperation_visualizer_observation": (
+        "berkeley_humanoid_lite.workflows.sim2real",
+        "build_quest_teleoperation_visualizer_observation",
     ),
 }
 

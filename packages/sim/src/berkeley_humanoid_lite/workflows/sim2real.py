@@ -1,14 +1,90 @@
 from __future__ import annotations
 
+import asyncio
+import signal
+import threading
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 import torch
+from berkeley_humanoid_lite_assets.robots import get_variant_for_joint_count
+from berkeley_humanoid_lite_assets.robots.joints import ARM_JOINT_NAMES
 
 
 def compute_policy_observation_size(num_joints: int) -> int:
     return 7 + num_joints * 2 + 1 + 3
+
+
+def resolve_visualizer_joint_names(configuration: object) -> tuple[str, ...]:
+    configured_joint_names = tuple(str(name) for name in getattr(configuration, "joints", ()))
+    joint_count = int(configuration.num_joints)
+    if len(configured_joint_names) == joint_count:
+        return configured_joint_names
+
+    variant = get_variant_for_joint_count(joint_count)
+    return tuple(str(name) for name in variant.joint_names)
+
+
+def resolve_visualizer_default_joint_positions(configuration: object) -> np.ndarray:
+    joint_names = resolve_visualizer_joint_names(configuration)
+    joint_count = len(joint_names)
+    configured_positions = np.asarray(
+        getattr(configuration, "default_joint_positions", ()),
+        dtype=np.float32,
+    )
+    if configured_positions.shape == (joint_count,):
+        return configured_positions.astype(np.float32, copy=True)
+
+    variant = get_variant_for_joint_count(joint_count)
+    return np.asarray(
+        [variant.initial_joint_positions.get(joint_name, 0.0) for joint_name in joint_names],
+        dtype=np.float32,
+    )
+
+
+def build_quest_teleoperation_visualizer_observation(
+    configuration: object,
+    *,
+    arm_joint_positions: Sequence[float] | np.ndarray,
+    previous_joint_positions: Sequence[float] | np.ndarray | None = None,
+    dt: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    joint_names = resolve_visualizer_joint_names(configuration)
+    joint_count = len(joint_names)
+    if joint_count != int(configuration.num_joints):
+        raise ValueError("Visualizer joint name count must match configuration.num_joints")
+
+    full_joint_positions = resolve_visualizer_default_joint_positions(configuration)
+    arm_targets = np.asarray(arm_joint_positions, dtype=np.float32)
+    if arm_targets.shape != (len(ARM_JOINT_NAMES),):
+        raise ValueError("arm_joint_positions must contain exactly 10 arm joint targets")
+
+    joint_index_by_name = {joint_name: index for index, joint_name in enumerate(joint_names)}
+    for arm_index, joint_name in enumerate(ARM_JOINT_NAMES):
+        joint_index = joint_index_by_name.get(joint_name)
+        if joint_index is None:
+            continue
+        full_joint_positions[joint_index] = arm_targets[arm_index]
+
+    if previous_joint_positions is None:
+        full_joint_velocities = np.zeros((joint_count,), dtype=np.float32)
+    else:
+        previous_positions = np.asarray(previous_joint_positions, dtype=np.float32)
+        if previous_positions.shape != (joint_count,):
+            raise ValueError("previous_joint_positions must match configuration.num_joints")
+        if dt is None or dt <= 0.0:
+            full_joint_velocities = np.zeros((joint_count,), dtype=np.float32)
+        else:
+            full_joint_velocities = (full_joint_positions - previous_positions) / float(dt)
+
+    observation = np.zeros((compute_policy_observation_size(joint_count),), dtype=np.float32)
+    observation[0:4] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    observation[4:7] = 0.0
+    observation[7 : 7 + joint_count] = full_joint_positions
+    observation[7 + joint_count : 7 + 2 * joint_count] = full_joint_velocities
+    return observation, full_joint_positions.copy()
 
 
 def _format_array(values: Sequence[float] | np.ndarray) -> str:
@@ -216,6 +292,154 @@ def run_observation_visualizer(configuration: object) -> None:
     run_mujoco_visualization(configuration)
 
 
+def _run_quest_visualizer_loop(
+    *,
+    configuration: object,
+    bridge_server: object,
+    stop_event: threading.Event,
+    frequency: float,
+    measurement_alpha: float,
+) -> None:
+    import berkeley_humanoid_lite_lowlevel.teleoperation as teleoperation_module
+    from berkeley_humanoid_lite_lowlevel.workflows.teleoperation import (
+        build_minimal_teleoperation_observations,
+        update_offline_joint_observations,
+    )
+
+    from berkeley_humanoid_lite.environments import MujocoVisualizer
+
+    solver = teleoperation_module.TeleoperationIkSolver(
+        enable_visualizer=False,
+    )
+    observations = build_minimal_teleoperation_observations(solver.robot.model.nq)
+    visualizer = MujocoVisualizer(configuration)
+    visualizer.reset()
+    previous_joint_positions = resolve_visualizer_default_joint_positions(configuration)
+    period_seconds = 1.0 / frequency
+
+    try:
+        while not stop_event.is_set():
+            loop_start_time = time.perf_counter()
+            solver.update_controller(bridge_server.latest_bridge_data)
+            arm_joint_targets, _ = solver.update(observations)
+            update_offline_joint_observations(
+                observations,
+                arm_joint_targets,
+                alpha=measurement_alpha,
+            )
+            visualizer_observation, previous_joint_positions = build_quest_teleoperation_visualizer_observation(
+                configuration,
+                arm_joint_positions=arm_joint_targets,
+                previous_joint_positions=previous_joint_positions,
+                dt=period_seconds,
+            )
+            visualizer.step(visualizer_observation)
+
+            elapsed_seconds = time.perf_counter() - loop_start_time
+            stop_event.wait(max(period_seconds - elapsed_seconds, 0.0))
+    finally:
+        visualizer.close()
+
+
+async def _run_quest_webxr_observation_visualizer_async(
+    configuration: object,
+    *,
+    host: str,
+    https_port: int,
+    websocket_port: int,
+    position_scale: float,
+    frequency: float,
+    measurement_alpha: float,
+    certificate_path: str | None,
+    private_key_path: str | None,
+) -> None:
+    from berkeley_humanoid_lite_lowlevel.teleoperation.webxr import (
+        QuestWebXrBridgeServer,
+        QuestWebXrServerConfig,
+    )
+
+    bridge_server = QuestWebXrBridgeServer(
+        QuestWebXrServerConfig(
+            host=host,
+            https_port=https_port,
+            websocket_port=websocket_port,
+            position_scale=position_scale,
+            certificate_path=certificate_path,
+            private_key_path=private_key_path,
+        )
+    )
+    await bridge_server.start()
+
+    print("Quest WebXR sim2real visualizer is ready.")
+    print(f"Page URL: {bridge_server.page_url}")
+    print(f"WebSocket URL: {bridge_server.websocket_url}")
+    print("Open the page in the Meta Quest browser and accept the HTTPS warning once.")
+    print("MuJoCo will visualize the Quest-driven arm motion on the host machine.")
+
+    stop_event = threading.Event()
+    visualizer_thread = threading.Thread(
+        target=_run_quest_visualizer_loop,
+        kwargs={
+            "configuration": configuration,
+            "bridge_server": bridge_server,
+            "stop_event": stop_event,
+            "frequency": frequency,
+            "measurement_alpha": measurement_alpha,
+        },
+        daemon=True,
+    )
+    visualizer_thread.start()
+
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for current_signal in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(current_signal, shutdown_event.set)
+        except NotImplementedError:
+            pass
+
+    try:
+        await shutdown_event.wait()
+    finally:
+        stop_event.set()
+        visualizer_thread.join(timeout=2.0)
+        await bridge_server.stop()
+
+
+def run_quest_webxr_observation_visualizer(
+    configuration: object,
+    *,
+    host: str = "0.0.0.0",
+    https_port: int = 8443,
+    websocket_port: int = 8442,
+    position_scale: float = 1.0,
+    frequency: float = 60.0,
+    measurement_alpha: float = 0.35,
+    certificate_path: str | None = None,
+    private_key_path: str | None = None,
+) -> None:
+    if frequency <= 0.0:
+        raise ValueError("Quest WebXR sim2real frequency must be positive.")
+    if not 0.0 < measurement_alpha <= 1.0:
+        raise ValueError("Quest WebXR sim2real measurement alpha must be in (0.0, 1.0].")
+    if position_scale <= 0.0:
+        raise ValueError("Quest WebXR sim2real position scale must be positive.")
+
+    asyncio.run(
+        _run_quest_webxr_observation_visualizer_async(
+            configuration,
+            host=host,
+            https_port=https_port,
+            websocket_port=websocket_port,
+            position_scale=position_scale,
+            frequency=frequency,
+            measurement_alpha=measurement_alpha,
+            certificate_path=certificate_path,
+            private_key_path=private_key_path,
+        )
+    )
+
+
 def run_mujoco_joint_position_bridge(
     configuration: object,
     *,
@@ -233,10 +457,11 @@ def run_mujoco_joint_position_bridge(
     policy_gate_degrees: float | None = None,
     enable_imu: bool = False,
 ) -> None:
-    from berkeley_humanoid_lite.environments import MujocoSimulator
     from berkeley_humanoid_lite_lowlevel.policy import PolicyController
     from berkeley_humanoid_lite_lowlevel.robot.control_state import LocomotionControlState
     from berkeley_humanoid_lite_lowlevel.workflows.locomotion import create_locomotion_robot
+
+    from berkeley_humanoid_lite.environments import MujocoSimulator
 
     if debug_every <= 0:
         raise ValueError("debug_every must be positive")

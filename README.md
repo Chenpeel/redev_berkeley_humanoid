@@ -315,6 +315,9 @@ uv run python apps/sim2sim/play_mujoco.py --config configs/policies/policy_biped
 # sim2real 观测可视化
 uv run python apps/sim2real/visualize.py --config configs/policies/policy_biped_50hz.yaml
 
+# Quest WebXR -> sim2real MuJoCo 可视化
+uv run python apps/sim2real/run_quest_webxr.py --config configs/policies/policy_humanoid.yaml --host 0.0.0.0
+
 # MuJoCo 关节增量桥接到真机
 uv run python apps/sim2real/bridge_mujoco_delta.py --config configs/policies/policy_biped_50hz.yaml
 
