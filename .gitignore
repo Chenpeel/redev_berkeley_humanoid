@@ -13,6 +13,7 @@ artifacts/untested_ckpts/
 artifacts/generated/
 artifacts/logs/
 artifacts/calibration/
+artifacts/teleoperation/
 
 build/
 dist/
