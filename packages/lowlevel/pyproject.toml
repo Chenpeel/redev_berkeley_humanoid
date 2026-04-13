@@ -30,6 +30,7 @@ teleoperation = [
     "pin",
     "pin-pink",
     "qpsolvers[quadprog]",
+    "websockets",
 ]
 
 [tool.setuptools]

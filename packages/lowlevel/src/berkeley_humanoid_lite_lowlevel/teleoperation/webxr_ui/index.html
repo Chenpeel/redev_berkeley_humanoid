@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Berkeley Humanoid Quest Teleop</title>
+    <meta
+      name="description"
+      content="Quest WebXR teleoperation bridge for Berkeley Humanoid Lite"
+    />
+    <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+    <script>
+      window.BHL_WEBXR_CONFIG = {
+        pageUrl: "__PAGE_URL__",
+        websocketUrl: "__WS_URL__",
+        displayHost: "__DISPLAY_HOST__",
+      };
+    </script>
+    <script src="/app.js" defer></script>
+    <style>
+      :root {
+        --bg-top: #091521;
+        --bg-bottom: #142f2f;
+        --panel: rgba(10, 18, 28, 0.78);
+        --panel-border: rgba(196, 219, 226, 0.18);
+        --text: #f2f7f5;
+        --muted: #9fb5b8;
+        --accent: #74f0cb;
+        --accent-strong: #1eb38f;
+        --warning: #ffbf69;
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+        --sans: "Avenir Next", "Segoe UI", "Noto Sans", sans-serif;
+        --mono: "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top left, rgba(116, 240, 203, 0.18), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(255, 191, 105, 0.14), transparent 30%),
+          linear-gradient(160deg, var(--bg-top), var(--bg-bottom));
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 36px 36px;
+        pointer-events: none;
+      }
+
+      .hud {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 18px;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      .top-row,
+      .bottom-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .card {
+        max-width: min(420px, calc(100vw - 36px));
+        padding: 18px 20px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        backdrop-filter: blur(18px);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        pointer-events: auto;
+      }
+
+      .title {
+        font-size: clamp(24px, 4vw, 40px);
+        line-height: 1.02;
+        letter-spacing: -0.04em;
+        font-weight: 700;
+        margin: 0 0 8px;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .meta-list {
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .meta-list li {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .mono {
+        font-family: var(--mono);
+        color: var(--text);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .status-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #7c8890;
+        box-shadow: 0 0 0 6px rgba(124, 136, 144, 0.15);
+      }
+
+      .status-dot.connected {
+        background: var(--accent);
+        box-shadow: 0 0 0 6px rgba(116, 240, 203, 0.2);
+      }
+
+      .status-dot.warning {
+        background: var(--warning);
+        box-shadow: 0 0 0 6px rgba(255, 191, 105, 0.2);
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 18px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        appearance: none;
+        border: none;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .primary-button {
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #071110;
+      }
+
+      .secondary-button {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .hint-list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .scene-shell {
+        position: fixed;
+        inset: 0;
+      }
+
+      a-scene {
+        width: 100%;
+        height: 100%;
+      }
+
+      @media (max-width: 768px) {
+        .hud {
+          padding: 12px;
+        }
+
+        .top-row,
+        .bottom-row {
+          flex-direction: column;
+        }
+
+        .card {
+          max-width: none;
+          width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hud">
+      <div class="top-row">
+        <section class="card">
+          <p class="title">Quest WebXR Teleop</p>
+          <p class="subtitle">
+            Open this page in the Meta Quest browser, accept the self-signed
+            certificate, then enter XR to stream controller poses into the
+            Berkeley Humanoid teleoperation solver.
+          </p>
+          <ul class="meta-list">
+            <li>Page: <span class="mono">__PAGE_URL__</span></li>
+            <li>WebSocket: <span class="mono">__WS_URL__</span></li>
+            <li>Desktop Meshcat stays on the host machine.</li>
+          </ul>
+          <div class="actions">
+            <button class="primary-button" id="enter-xr-button" type="button">
+              Enter XR
+            </button>
+            <button class="secondary-button" id="copy-url-button" type="button">
+              Copy Page URL
+            </button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="status-pill">
+            <span class="status-dot" id="ws-status-dot"></span>
+            <span id="ws-status-text">WebSocket disconnected</span>
+          </div>
+          <div style="height: 10px"></div>
+          <div class="status-pill">
+            <span class="status-dot" id="xr-status-dot"></span>
+            <span id="xr-status-text">XR session idle</span>
+          </div>
+          <div style="height: 10px"></div>
+          <div class="status-pill">
+            <span class="status-dot" id="controller-status-dot"></span>
+            <span id="controller-status-text">Waiting for controllers</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="bottom-row">
+        <section class="card">
+          <ol class="hint-list">
+            <li>Accept the HTTPS warning once on Quest.</li>
+            <li>Click <span class="mono">Enter XR</span> after the page loads.</li>
+            <li>Hold grip to clutch an arm. Trigger drives the gripper target.</li>
+            <li>If floor-space enter fails, the page will retry with local space automatically.</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+
+    <div class="scene-shell">
+      <a-scene
+        background="color: #041018"
+        renderer="colorManagement: true; physicallyCorrectLights: true"
+        vr-mode-ui="enabled: false"
+        webxr="referenceSpaceType: local-floor; optionalFeatures: hand-tracking"
+      >
+        <a-entity id="scene-banner" position="0 1.55 0">
+          <a-text
+            value="Berkeley Humanoid Teleop Bridge"
+            color="#d6fff1"
+            align="center"
+            width="4.5"
+          ></a-text>
+          <a-text
+            value="Quest page streams controller pose to the host solver"
+            color="#8cbab5"
+            align="center"
+            width="5"
+            position="0 -0.18 0"
+          ></a-text>
+        </a-entity>
+
+        <a-entity light="type: hemisphere; intensity: 0.8; color: #ecfff7; groundColor: #102332"></a-entity>
+        <a-entity light="type: directional; intensity: 0.7" position="1.4 2.2 0.8"></a-entity>
+
+        <a-plane
+          id="scene-floor"
+          position="0 0 -0.1"
+          rotation="-90 0 0"
+          width="6"
+          height="6"
+          color="#163339"
+          material="metalness: 0.05; roughness: 0.92"
+        ></a-plane>
+
+        <a-entity id="left-controller" oculus-touch-controls="hand: left">
+          <a-text
+            id="left-controller-text"
+            value="Left controller"
+            position="0 0.045 -0.05"
+            rotation="-90 0 0"
+            scale="0.08 0.08 0.08"
+            width="1.9"
+            color="#ffffff"
+            align="center"
+            material="side: double; transparent: true"
+          ></a-text>
+        </a-entity>
+        <a-entity id="right-controller" oculus-touch-controls="hand: right">
+          <a-text
+            id="right-controller-text"
+            value="Right controller"
+            position="0 0.045 -0.05"
+            rotation="-90 0 0"
+            scale="0.08 0.08 0.08"
+            width="1.9"
+            color="#ffffff"
+            align="center"
+            material="side: double; transparent: true"
+          ></a-text>
+        </a-entity>
+
+        <a-camera position="0 1.6 0"></a-camera>
+      </a-scene>
+    </div>
+  </body>
+</html>

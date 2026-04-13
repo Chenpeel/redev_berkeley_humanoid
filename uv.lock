@@ -366,6 +366,7 @@ teleoperation = [
     { name = "pin", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pin-pink", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "qpsolvers", extra = ["quadprog"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "websockets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 
 [package.metadata]
@@ -386,6 +387,7 @@ requires-dist = [
     { name = "qpsolvers", extras = ["quadprog"], marker = "extra == 'teleoperation'" },
     { name = "setuptools", marker = "extra == 'runtime'", specifier = "<81" },
     { name = "torch", marker = "extra == 'runtime'", specifier = "==2.7.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "websockets", marker = "extra == 'teleoperation'" },
 ]
 provides-extras = ["runtime", "teleoperation"]
 
